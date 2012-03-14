@@ -1,0 +1,75 @@
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE PatternGuards   #-}
+module SoOSiM.Simulator where
+
+import Control.Monad.State
+import Control.Monad.Trans.Class ()
+import Data.IntMap
+import Data.Maybe
+import qualified Data.Traversable as T
+
+import SoOSiM.Types
+import SoOSiM.CoroutineT
+import SoOSiM.Util
+
+modifyNode ::
+  NodeId
+  -> (Node -> Node)
+  -> SimM ()
+modifyNode i f = do
+  ns <- lift $ gets nodes
+  lift $ modify (\s -> s {nodes = adjust f i ns})
+
+updateMsgBuffer ::
+  Int
+  -> ComponentInput
+  -> Node
+  -> Node
+updateMsgBuffer recipient msg node =
+  case (nodeComponents node) of
+    CC ces -> node { nodeComponents = CC (adjust (updateMsgBuffer' msg) recipient ces) }
+
+updateMsgBuffer' ::
+  ComponentInput
+  -> ContainerElement s
+  -> ContainerElement s
+updateMsgBuffer' msg ce@(CE {..}) = ce {msgBuffer = msg:msgBuffer}
+
+handleComponent ::
+  ContainerElement s
+  -> ComponentInput
+  -> SimMonad (ContainerElement s, Maybe ComponentInput)
+handleComponent ce (ComponentMsg sender content)
+  | (WaitingForMsg waitingFor f) <- currentStatus ce
+  , waitingFor == sender
+  = do
+    res <- runCoroutineT (f content)
+    case res of
+      Result a  -> return (ce {currentStatus = Idle, currentState = a}, Nothing)
+      Yield o c -> return (ce {currentStatus = WaitingForMsg o c}, Nothing)
+
+handleComponent ce msg
+  | (WaitingForMsg _ _) <- currentStatus ce
+  = return (ce, Just msg)
+
+handleComponent ce msg = do
+  res <- runCoroutineT ((compFun ce) (currentState ce) msg)
+  case res of
+    Result a  -> return (ce {currentStatus = Idle, currentState = a}, Nothing)
+    Yield o c -> return (ce {currentStatus = WaitingForMsg o c}, Nothing)
+
+executeNode ::
+  Node
+  -> SimMonad Node
+executeNode n@(Node nId _ (CC components) _) = do
+  modify $ (\s -> s {currentNode = nId})
+  components' <- T.mapM executeComponent components
+  return (n {nodeComponents = CC components'})
+
+executeComponent ::
+  ContainerElement s
+  -> SimMonad (ContainerElement s)
+executeComponent ce = do
+  (ce',buffer') <- mapAccumLM handleComponent ce (msgBuffer ce)
+  return (ce' {msgBuffer = catMaybes buffer'})
+
