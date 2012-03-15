@@ -226,6 +226,27 @@ We then synchronously send a message to this component, and forward the received
 
 In the situations which we didn't handle explicitly, such as receiving something besides a ComponentMsg, or receiving a ComponentMsg which was not a valid memory request, we simply disregard the simulator event, and return our unaltered internal state to the simulator.
 
+#### ComponentIface Instance
+At the bottom of our `MemoryManager` module we see the following code:
+
+```haskell
+instance ComponentIface MemState where
+  initState    = MemState [] empty
+  componentFun = memoryManager
+```
+
+Here we define a so-called type-class instance.
+At this moment you do not need to know what a type-class is, just that you need to define this instance if you want your component to be able to be used by the SoOSiM simulator.
+
+This instance must always contain the definitons for `initState` and `componentFun`, where `initState` is the minimal internal state of your component, and `componentFun` is the function defining the behaviour of your component.
+The behaviour of your component must always have the type:
+
+```haskell
+s -> ComponentInput -> SimM s
+```
+
+Where `s` is the datatype of your component's internal state.
+
 ## OS Component API
 ```haskell
 -- | Send a message synchronously to another component
