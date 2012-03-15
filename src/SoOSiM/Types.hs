@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module SoOSiM.Types where
 
 import Control.Monad.State
+import Control.Monad.Trans.Class ()
 import Data.Dynamic
 import Data.IntMap
 
@@ -11,8 +13,10 @@ import SoOSiM.CoroutineT
 
 type ComponentId = Int
 
-type SimM a = CoroutineT Dynamic SimMonad a
-type SimMonad = StateT SimState IO
+newtype SimM a = SimM { runSimM :: CoroutineT Dynamic SimMonad a }
+  deriving Monad
+
+type SimMonad  = StateT SimState IO
 
 data SimState =
   SimState { currentComponent :: ComponentId

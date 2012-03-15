@@ -2,6 +2,7 @@ module SoOSiM.SimMonad where
 
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
+import Data.Maybe
 
 import SoOSiM.CoroutineT
 import SoOSiM.Simulator
@@ -10,53 +11,51 @@ import SoOSiM.Util
 
 -- | Create a new component
 createComponent ::
-  -- | aap
-  ComponentIface s
+  ComponentIface s    -- A ComponentIface instance must be defined for the component state
   => Maybe NodeId     -- ^ Node to create module on, leave to 'Nothing' to create on current node
   -> s                -- ^ Initial state of the component
   -> SimM ComponentId -- ^ ComponentId of the created module
-createComponent = undefined
+createComponent = error "createComponent"
 
 -- | Send a message synchronously to another component
 sendMessageSync ::
   Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current module
   -> ComponentId    -- ^ Recipient
   -> Dynamic        -- ^ Message content
-  -> SimM Dynamic
-sendMessageSync Nothing recipient content = do
-  nId <- getNodeId
-  mId <- getComponentId
-  modifyNode nId (updateMsgBuffer recipient (ComponentMsg mId content))
+  -> SimM Dynamic   -- ^ Response from recipient
+sendMessageSync senderMaybe recipient content = SimM $ do
+  nId <- runSimM $ getNodeId
+  mId <- runSimM $ getComponentId
+  lift $ modifyNode nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
   yield recipient
 
-sendMessageSync _ _ _ = error "sendMessageSync"
-
+-- | Send a message asynchronously to another component
 sendMessageAsync ::
   Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current module
   -> ComponentId    -- ^ Recipient
   -> Dynamic        -- ^ Message content
-  -> SimM ()
+  -> SimM ()        -- ^ Call returns immediately
 sendMessageAsync = error "sendMessageAsync"
 
 -- | Get the component id of your component
 getComponentId ::
   SimM ComponentId
-getComponentId = lift $ gets currentComponent
+getComponentId = SimM $ lift $ gets currentComponent
 
 -- | Get the node id of of the node your component is currently running on
 getNodeId ::
   SimM NodeId
-getNodeId = lift $ gets currentNode
+getNodeId = SimM $ lift $ gets currentNode
 
 -- | Create a new node
 createNode ::
   Maybe NodeId   -- ^ Connected node, leave 'Nothing' to set to current node
   -> SimM NodeId -- ^ NodeId of the created node
-createNode = undefined
+createNode = error "createNode"
 
 -- | Write memory of local node
 writeMemory ::
-  Int -- ^ Address to write
+  Int        -- ^ Address to write
   -> Dynamic -- ^ Value to write
   -> SimM ()
 writeMemory = error "writeMemory"
@@ -70,9 +69,9 @@ readMemory = error "readMemory"
 -- | Return the component Id of the component that created the current component
 componentCreator ::
   SimM ComponentId
-componentCreator = do
-  nId <- getNodeId
-  cId <- getComponentId
+componentCreator = SimM $ do
+  nId <- runSimM $ getNodeId
+  cId <- runSimM $ getComponentId
   ns <- lift $ gets nodes
   case (nodeComponents (ns!nId)) of
     CC ces -> do

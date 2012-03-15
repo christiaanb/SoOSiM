@@ -15,10 +15,10 @@ import SoOSiM.Util
 modifyNode ::
   NodeId
   -> (Node -> Node)
-  -> SimM ()
+  -> SimMonad ()
 modifyNode i f = do
-  ns <- lift $ gets nodes
-  lift $ modify (\s -> s {nodes = adjust f i ns})
+  ns <- gets nodes
+  modify (\s -> s {nodes = adjust f i ns})
 
 updateMsgBuffer ::
   Int
@@ -43,20 +43,20 @@ handleComponent ce (ComponentMsg sender content)
   | (WaitingForMsg waitingFor f) <- currentStatus ce
   , waitingFor == sender
   = do
-    res <- runCoroutineT (f content)
+    res <- runCoroutineT $ runSimM (f content)
     case res of
       Result a  -> return (ce {currentStatus = Idle, currentState = a}, Nothing)
-      Yield o c -> return (ce {currentStatus = WaitingForMsg o c}, Nothing)
+      Yield o c -> return (ce {currentStatus = WaitingForMsg o (SimM . c)}, Nothing)
 
 handleComponent ce msg
   | (WaitingForMsg _ _) <- currentStatus ce
   = return (ce, Just msg)
 
 handleComponent ce msg = do
-  res <- runCoroutineT ((compFun ce) (currentState ce) msg)
+  res <- runCoroutineT $ runSimM ((compFun ce) (currentState ce) msg)
   case res of
     Result a  -> return (ce {currentStatus = Idle, currentState = a}, Nothing)
-    Yield o c -> return (ce {currentStatus = WaitingForMsg o c}, Nothing)
+    Yield o c -> return (ce {currentStatus = WaitingForMsg o (SimM . c)}, Nothing)
 
 executeNode ::
   Node
