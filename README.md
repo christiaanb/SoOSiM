@@ -55,3 +55,70 @@ memoryManager s (ComponentMsg senderId msgContent) = do
 
 memoryManager s _ = return s
 ```
+
+### OS Component API
+```haskell
+-- | Send a message synchronously to another component
+sendMessageSync ::
+  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current module
+  -> ComponentId    -- ^ Recipient
+  -> Dynamic        -- ^ Message content
+  -> SimM Dynamic   -- ^ Response from recipient
+```
+
+```haskell
+-- | Send a message asynchronously to another component
+sendMessageAsync ::
+  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current module
+  -> ComponentId    -- ^ Recipient
+  -> Dynamic        -- ^ Message content
+  -> SimM ()        -- ^ Call return immediately
+```
+
+```haskell
+-- | Get the component id of your component
+getComponentId ::
+  SimM ComponentId
+```
+
+```haskell
+-- | Get the node id of of the node your component is currently running on
+getNodeId ::
+  SimM NodeId
+```
+
+```haskell
+-- | Return the component Id of the component that created the current component
+componentCreator ::
+  SimM ComponentId
+```
+
+```haskell
+-- | Write memory of local node
+writeMemory ::
+  Int        -- ^ Address to write
+  -> Dynamic -- ^ Value to write
+  -> SimM ()
+```
+
+```haskell
+-- | Read memory of local node
+readMemory ::
+  Int -- ^ Address to read
+  -> SimM Dynamic
+```
+
+```haskell
+-- | Create a new node
+createNode ::
+  Maybe NodeId   -- ^ Connected node, leave 'Nothing' to set to current node
+  -> SimM NodeId -- ^ NodeId of the created node
+```
+
+```haskell
+createComponent ::
+  ComponentIface s    -- A ComponentIface instance must be defined for the component state
+  => Maybe NodeId     -- ^ Node to create module on, leave to 'Nothing' to create on current node
+  -> s                -- ^ Initial state of the component
+  -> SimM ComponentId -- ^ ComponentId of the created module
+```
