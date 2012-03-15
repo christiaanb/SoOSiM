@@ -1,6 +1,20 @@
 SoOSiM - Abstract Full System Simulator
 =======================================
 
+Installation
+------------
+
+* Download the latest Haskell Platform from: http://hackage.haskell.org/platform/
+* Run `cabal update` from the command line
+* Either clone the git repository, or download and unpack the zip-file from: http://github.com/christiaanb/SoOSiM
+* Change directory to the created directory
+* Run `cabal install` from the command line
+
+Creating OS Components
+----------------------
+
+We jump straight into some code, by showing the description of the *Memory Manager* (http://www.soos-project.eu/wiki/index.php/Application_Cases#Memory_Manager)
+
 ```haskell
 module MemoryManager where
 
