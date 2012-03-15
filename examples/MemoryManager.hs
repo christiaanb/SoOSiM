@@ -1,8 +1,9 @@
 module MemoryManager where
 
-import Data.Maybe
 import Data.IntMap
 import SoOSiM
+
+import MemoryManager.Util
 
 data MemState =
   MemState { localAddress  :: [Int]
@@ -13,9 +14,9 @@ memoryManager :: MemState -> ComponentInput -> SimM MemState
 memoryManager s (ComponentMsg senderId msgContent) = do
   let addrMaybe = identifyAddress msgContent
   case addrMaybe of
-    Just addr -> do
+    Just addr ->
       case (addr `elem` localAddress s) of
-        True  -> do
+        True  ->
           case (memCommand msgContent) of
             Read _  -> do
               addrVal <- readMemory addr
@@ -28,22 +29,12 @@ memoryManager s (ComponentMsg senderId msgContent) = do
         False -> do
           creator <- componentCreator
           let remote = findWithDefault creator addr (remoteAddress s)
-          a <- sendMessageSync Nothing remote msgContent
-          sendMessageAsync Nothing senderId a
+          response <- sendMessageSync Nothing remote msgContent
+          sendMessageAsync Nothing senderId response
           return s
     Nothing -> return s
 
 memoryManager s _ = return s
-
-
-identifyAddress :: Dynamic -> Maybe Int
-identifyAddress d = case (fromDynamic d) of
-  Just (Write i _) -> Just i
-  Just (Read i)    -> Just i
-  Nothing          -> Nothing
-
-memCommand :: Dynamic -> MemCommand
-memCommand = fromJust . fromDynamic
 
 instance ComponentIface MemState where
   initState    = MemState [] empty
