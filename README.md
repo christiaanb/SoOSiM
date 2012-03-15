@@ -247,7 +247,15 @@ s -> ComponentInput -> SimM s
 
 Where `s` is the datatype of your component's internal state.
 
-## OS Component API
+## SoOSiM API
+
+#### Simulator Events
+```haskell
+data ComponentInput = ComponentMsg ComponentId Dynamic
+                    | NodeMsg      NodeId      Dynamic
+```
+
+#### Accessing the simulator
 ```haskell
 -- | Send a message synchronously to another component
 sendMessageSync ::
@@ -307,6 +315,7 @@ createNode ::
 ```
 
 ```haskell
+-- | Create a new component
 createComponent ::
   ComponentIface s    -- A ComponentIface instance must be defined for the component state
   => Maybe NodeId     -- ^ Node to create module on, leave to 'Nothing' to create on current node
@@ -314,7 +323,37 @@ createComponent ::
   -> SimM ComponentId -- ^ ComponentId of the created module
 ```
 
+#### Handling `Dynamic` Values
+
+```haskell
+-- | Converts an arbitrary value into an object of type 'Dynamic'
+toDyn :: Typeable a => a -> Dynamic
+```
+
+```haskell
+-- | Converts a 'Dynamic' object back into an ordinary Haskell value of the correct type.
+fromDyn :: 
+  Typeable a 
+  => Dynamic  -- ^ The dynamically-typed object
+  -> a        -- ^ A default value
+  -> a        -- ^ Returns: the value of the first argument, if it has the correct type, otherwise the value of the second argument.
+```
+
+```haskell
+-- | Converts a 'Dynamic' object back into an ordinary Haskell value of the correct type.
+fromDynamic :: 
+  Typeable a 
+  => Dynamic  -- ^ The dynamically-typed object
+  -> a        -- ^ A default value
+  -> a        -- ^ Returns: 'Just a', if the dynamically-typed object has the correct type (and 'a' is its value), or 'Nothing' otherwise.
+```
+
+References
+----------
+
 [1] Here is a chapter from a book that introduces the correspondence between Haskell types and C types:
 http://book.realworldhaskell.org/read/defining-types-streamlining-functions.html
+
 [2] Some resources that discuss monads: http://book.realworldhaskell.org/read/monads.html and http://learnyouahaskell.com/a-fistful-of-monads
+
 [3] A more elaborate explanation of purity can be found here: http://learnyouahaskell.com/introduction#so-whats-haskell
