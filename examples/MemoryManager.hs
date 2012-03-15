@@ -1,17 +1,15 @@
 module MemoryManager where
 
+import Data.Maybe
+import Data.IntMap
 import SoOSiM
-import SoOSiM.Util
-
-instance ComponentIface MemState where
-  initState    = MemState [] empty
-  componentFun = memoryManager
 
 data MemState =
   MemState { localAddress  :: [Int]
            , remoteAddress :: IntMap ComponentId
            }
 
+memoryManager :: MemState -> ComponentInput -> SimM MemState
 memoryManager s (ComponentMsg senderId msgContent) = do
   let addrMaybe = identifyAddress msgContent
   case addrMaybe of
@@ -36,3 +34,17 @@ memoryManager s (ComponentMsg senderId msgContent) = do
     Nothing -> return s
 
 memoryManager s _ = return s
+
+
+identifyAddress :: Dynamic -> Maybe Int
+identifyAddress d = case (fromDynamic d) of
+  Just (Write i _) -> Just i
+  Just (Read i)    -> Just i
+  Nothing          -> Nothing
+
+memCommand :: Dynamic -> MemCommand
+memCommand = fromJust . fromDynamic
+
+instance ComponentIface MemState where
+  initState    = MemState [] empty
+  componentFun = memoryManager
