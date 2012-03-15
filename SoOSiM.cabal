@@ -19,8 +19,7 @@ Cabal-version:       >=1.2
 Library
   HS-Source-Dirs:   src
 
-  Exposed-modules:  SoOSiM,
-                    SoOSiM.Util
+  Exposed-modules:  SoOSiM
 
   ghc-options:      -Wall
 
@@ -32,7 +31,8 @@ Library
   Other-modules:    SoOSiM.CoroutineT,
                     SoOSiM.SimMonad,
                     SoOSiM.Simulator,
-                    SoOSiM.Types
+                    SoOSiM.Types,
+                    SoOSiM.Util
 
   -- Build-tools:
 

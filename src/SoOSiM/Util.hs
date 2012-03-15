@@ -7,26 +7,7 @@ where
 
 import Data.Dynamic
 import Data.IntMap
-import Data.Maybe
 import Data.Monoid
-
-import SoOSiM.Types
-
-identifyAddress :: Dynamic -> Maybe Int
-identifyAddress = fmap addr . toMemCommand
-
-memCommand :: Dynamic -> MemCommand
-memCommand = fromJust . toMemCommand
-
-toMemCommand :: Dynamic -> Maybe MemCommand
-toMemCommand = fromDynamic
-
-fromMemCommand :: MemCommand -> Dynamic
-fromMemCommand = toDyn
-
-addr :: MemCommand -> Int
-addr (Read i)    = i
-addr (Write i _) = i
 
 adjustForce :: Monoid a => (a -> a) -> Key -> IntMap a -> IntMap a
 adjustForce f k m = case (member k m) of
