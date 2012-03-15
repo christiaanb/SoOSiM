@@ -15,7 +15,7 @@ Creating OS Components
 
 We jump straight into some code, by showing the description of the *Memory Manager* (http://www.soos-project.eu/wiki/index.php/Application_Cases#Memory_Manager)
 
-#### MemoryManager.hs
+#### ./examples/MemoryManager.hs
 ```haskell
 module MemoryManager where
 
@@ -56,21 +56,12 @@ memoryManager s (ComponentMsg senderId msgContent) = do
 memoryManager s _ = return s
 
 
-identifyAddress :: Dynamic -> Maybe Int
-identifyAddress d = case (fromDynamic d) of
-  Just (Write i _) -> Just i
-  Just (Read i)    -> Just i
-  Nothing          -> Nothing
-
-memCommand :: Dynamic -> MemCommand
-memCommand = fromJust . fromDynamic
-
 instance ComponentIface MemState where
   initState    = MemState [] empty
   componentFun = memoryManager
 ```
 
-#### MemoryManager/Util.hs
+#### ./examples/MemoryManager/Util.hs
 ```haskell
 module MemoryManager.Util where
 
@@ -106,7 +97,44 @@ import SoOSiM
 import MemoryManager.Util
 ```
 
-The `Data.IntMap` module which gives us an efficient datastructure, and corresponding functions, that maps integer keys to values.
+The `Data.IntMap` module gives us an efficient datastructure, and corresponding functions, that maps integer keys to values.
+The `SoOSiM` module defines all the simulator API functions.
+Besides these *external* modules, we also import a *local* module called `MemoryManager.Util`, which we define in the `.MemoryManager/Util.hs` file.
+
+We start our description with a datatype definition describing the internal state of our memory manager component:
+
+```haskell
+data MemState =
+  MemState { localAddress  :: [Int]
+           , remoteAddress :: IntMap ComponentId
+           }
+```
+
+We define a record datatype [1] that has two fields `localAddress` and `remoteAddress`.
+The first field is a dynamically sized list with elements of `Int`, which holds the address' for which our memory manager is responsible.
+The second field is an `IntMap` datastructure that maps address' to the *Component ID* of the memory manager that is responsible for those address'.
+
+We now start defining the actual behaviour of our memory manager, starting with its type annotation:
+
+```haskell
+memoryManager :: MemState -> ComponentInput -> SimM MemState
+```
+
+The type defition tells us that the first argument has the type of our internal component state, and the second argument a value of type `ComponentInput`.
+The possible values of this type are enumarated in the *OS Component API* section.
+The value of the result is of type `SimM MemState`.
+This tells us two things:
+
+* The `memoryManager` function is exuted within the `SimM` monad.
+* The actual value that is returned is of type `MemState`.
+
+A *monad* is many wonderfully things [2], way too much to explain here, so for the rest of this README we see it as an execution environment.
+Only inside this execution environment will we have access to the SoOSiM API functions.
+
+Although we know the types of the arguments and the result of the function, we don't know their actual meaning.
+The SoOSiM simulator will call your component behaviour, passing as the first argument its current internal state.
+The second argument is an event that triggered the execution of your component: for example a message send to you by another component.
+The result that you must ultimately return is the, potentially updated, internal state of your component.
 
 ### OS Component API
 ```haskell
@@ -174,3 +202,6 @@ createComponent ::
   -> s                -- ^ Initial state of the component
   -> SimM ComponentId -- ^ ComponentId of the created module
 ```
+
+[1] Here is a chapter from a book that introduces the correspondence between Haskell types and C types:
+http://book.realworldhaskell.org/read/defining-types-streamlining-functions.html
