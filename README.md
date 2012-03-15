@@ -15,21 +15,21 @@ Creating OS Components
 
 We jump straight into some code, by showing the description of the *Memory Manager* (http://www.soos-project.eu/wiki/index.php/Application_Cases#Memory_Manager)
 
+#### MemoryManager.hs
 ```haskell
 module MemoryManager where
 
+import Data.IntMap
 import SoOSiM
-import SoOSiM.Util
 
-instance ComponentIface MemState where
-  initState    = MemState [] empty
-  componentFun = memoryManager
+import MemoryManager.Util
 
 data MemState =
   MemState { localAddress  :: [Int]
            , remoteAddress :: IntMap ComponentId
            }
 
+memoryManager :: MemState -> ComponentInput -> SimM MemState
 memoryManager s (ComponentMsg senderId msgContent) = do
   let addrMaybe = identifyAddress msgContent
   case addrMaybe of
@@ -54,7 +54,59 @@ memoryManager s (ComponentMsg senderId msgContent) = do
     Nothing -> return s
 
 memoryManager s _ = return s
+
+
+identifyAddress :: Dynamic -> Maybe Int
+identifyAddress d = case (fromDynamic d) of
+  Just (Write i _) -> Just i
+  Just (Read i)    -> Just i
+  Nothing          -> Nothing
+
+memCommand :: Dynamic -> MemCommand
+memCommand = fromJust . fromDynamic
+
+instance ComponentIface MemState where
+  initState    = MemState [] empty
+  componentFun = memoryManager
 ```
+
+#### MemoryManager/Util.hs
+```haskell
+module MemoryManager.Util where
+
+import Data.Maybe
+import SoOSiM
+
+identifyAddress :: Dynamic -> Maybe Int
+identifyAddress d = case (fromDynamic d) of
+  Just (Write i _) -> Just i
+  Just (Read i)    -> Just i
+  Nothing          -> Nothing
+
+memCommand :: Dynamic -> MemCommand
+memCommand = fromJust . fromDynamic
+```
+
+### Module definition Step-by-Step
+We will now walk through the code step-by-step:
+
+```haskell
+module MemoryManager where
+```
+
+We start by defining the name of our Haskell module, in this case `MemoryManager`.
+Make sure the name of file matches the name of the module, where haskell src files use the `.hs` file-name extention.
+
+We continue with importing modules that we require to build our component:
+
+```haskell
+import Data.IntMap
+import SoOSiM
+
+import MemoryManager.Util
+```
+
+The `Data.IntMap` module which gives us an efficient datastructure, and corresponding functions, that maps integer keys to values.
 
 ### OS Component API
 ```haskell
