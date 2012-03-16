@@ -4,17 +4,18 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module SoOSiM.Types where
 
+import Control.Monad.Coroutine
+import Control.Monad.Coroutine.SuspensionFunctors
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.Dynamic
 import Data.IntMap
 import Data.Map
 
-import SoOSiM.CoroutineT
 
 type ComponentId = Int
 
-newtype SimM a = SimM { runSimM :: CoroutineT Dynamic SimMonad a }
+newtype SimM a = SimM { runSimM :: Coroutine (Request Int Dynamic) SimMonad a }
   deriving Monad
 
 type SimMonad  = StateT SimState IO

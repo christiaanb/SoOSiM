@@ -2,6 +2,8 @@
 {-# LANGUAGE PatternGuards   #-}
 module SoOSiM.Simulator where
 
+import Control.Monad.Coroutine
+import Control.Monad.Coroutine.SuspensionFunctors
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.IntMap
@@ -9,7 +11,6 @@ import Data.Maybe
 import qualified Data.Traversable as T
 
 import SoOSiM.Types
-import SoOSiM.CoroutineT
 import SoOSiM.Util
 
 modifyNode ::
@@ -43,20 +44,20 @@ handleComponent ce (ComponentMsg sender content)
   | (WaitingForMsg waitingFor f) <- currentStatus ce
   , waitingFor == sender
   = do
-    res <- runCoroutineT $ runSimM (f content)
+    res <- resume $ runSimM (f content)
     case res of
-      Result a  -> return (ce {currentStatus = Idle, currentState = a}, Nothing)
-      Yield o c -> return (ce {currentStatus = WaitingForMsg o (SimM . c)}, Nothing)
+      Right a            -> return (ce {currentStatus = Idle, componentState = a}  , Nothing)
+      Left (Request o c) -> return (ce {currentStatus = WaitingForMsg o (SimM . c)}, Nothing)
 
 handleComponent ce msg
   | (WaitingForMsg _ _) <- currentStatus ce
   = return (ce, Just msg)
 
 handleComponent ce msg = do
-  res <- runCoroutineT $ runSimM ((compFun ce) (currentState ce) msg)
+  res <- resume $ runSimM ((compFun ce) (componentState ce) msg)
   case res of
-    Result a  -> return (ce {currentStatus = Idle, currentState = a}, Nothing)
-    Yield o c -> return (ce {currentStatus = WaitingForMsg o (SimM . c)}, Nothing)
+    Right a            -> return (ce {currentStatus = Idle, componentState = a}  , Nothing)
+    Left (Request o c) -> return (ce {currentStatus = WaitingForMsg o (SimM . c)}, Nothing)
 
 executeNode ::
   Node

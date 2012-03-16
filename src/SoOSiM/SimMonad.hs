@@ -1,12 +1,12 @@
 module SoOSiM.SimMonad where
 
+import Control.Monad.Coroutine.SuspensionFunctors
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.IntMap as IntMap
 import Data.Map    as Map
 import Data.Maybe
 
-import SoOSiM.CoroutineT
 import SoOSiM.Simulator
 import SoOSiM.Types
 import SoOSiM.Util
@@ -29,7 +29,7 @@ sendMessageSync senderMaybe recipient content = SimM $ do
   nId <- runSimM $ getNodeId
   mId <- runSimM $ getComponentId
   lift $ modifyNode nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
-  yield recipient
+  request recipient
 
 -- | Send a message asynchronously to another component
 sendMessageAsync ::
