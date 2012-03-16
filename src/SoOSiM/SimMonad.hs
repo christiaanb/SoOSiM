@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 module SoOSiM.SimMonad where
 
 import Control.Monad.Coroutine.SuspensionFunctors
@@ -60,13 +61,22 @@ writeMemory ::
   Int        -- ^ Address to write
   -> Dynamic -- ^ Value to write
   -> SimM ()
-writeMemory = error "writeMemory"
+writeMemory i val = SimM $ do
+    curNodeId <- runSimM getNodeId
+    lift $ modifyNode curNodeId writeVal
+  where
+    writeVal n@(Node {..}) = n { nodeMemory = IntMap.insert i val nodeMemory }
 
 -- | Read memory of local node
 readMemory ::
   Int -- ^ Address to read
   -> SimM Dynamic
-readMemory = error "readMemory"
+readMemory i = SimM $ do
+  curNodeId <- runSimM getNodeId
+  memVal <- fmap (IntMap.lookup i . nodeMemory . (IntMap.! curNodeId)) $ lift $ gets nodes
+  case memVal of
+    Just val -> return val
+    Nothing  -> error $ "Trying to read empty memory location: " ++ show i ++ " from Node: " ++ show curNodeId
 
 -- | Return the component Id of the component that created the current component
 componentCreator ::
