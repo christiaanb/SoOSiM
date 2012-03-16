@@ -12,9 +12,6 @@ import Data.Dynamic
 import Data.IntMap
 import Data.Map
 
-type ComponentId   = Int
-type ComponentName = String
-
 newtype SimM a = SimM { runSimM :: Coroutine (Request Int Dynamic) SimMonad a }
   deriving Monad
 
@@ -30,23 +27,27 @@ class ComponentIface s where
   initState    :: s
   componentFun :: s -> ComponentInput -> SimM s
 
-data NodeInfo = NodeInfo
+type ComponentId   = Int
+type ComponentName = String
+
 data ComponentInput = ComponentMsg ComponentId Dynamic
                     | NodeMsg NodeId Dynamic
 
 data ComponentStatus a = Idle | WaitingForMsg ComponentId (Dynamic -> SimM a) | Running
-
-type NodeId = Int
 
 data ComponentContext s =
   CE { currentStatus  :: ComponentStatus s
      , componentState :: s
      , creator        :: ComponentId
      , msgBuffer      :: [ComponentInput]
+     , componentName  :: ComponentName
      , compFun        :: s -> ComponentInput -> SimM s
      }
 
 data ComponentContainer = forall s . ComponentIface s => CC (IntMap (ComponentContext s))
+
+type NodeId   = Int
+data NodeInfo = NodeInfo
 
 data Node =
   Node { nodeId              :: NodeId
@@ -55,8 +56,6 @@ data Node =
        , nodeComponents      :: ComponentContainer
        , nodeMemory          :: IntMap Dynamic
        }
-
-data MsgMode = Sync | Async
 
 data MemCommand = Read Int
                 | Write Int Dynamic

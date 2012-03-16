@@ -27,8 +27,8 @@ sendMessageSync ::
   -> Dynamic        -- ^ Message content
   -> SimM Dynamic   -- ^ Response from recipient
 sendMessageSync senderMaybe recipient content = SimM $ do
-  nId <- runSimM $ getNodeId
-  mId <- runSimM $ getComponentId
+  nId <- runSimM getNodeId
+  mId <- runSimM getComponentId
   lift $ modifyNode nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
   request recipient
 
@@ -97,7 +97,7 @@ componentLookup ::
   -> ComponentName            -- ^ Name of the component you are looking for
   -> SimM (Maybe ComponentId) -- ^ 'Just ComponentID' if the component is found, 'Nothing' otherwise
 componentLookup idMaybe cName = SimM $ do
-  curNodeId <- runSimM $ getNodeId
+  curNodeId <- runSimM getNodeId
   let nId   = fromMaybe curNodeId idMaybe
   nsLookup  <- fmap (nodeComponentLookup . (IntMap.! nId)) $ lift $ gets nodes
   return $ Map.lookup cName nsLookup
