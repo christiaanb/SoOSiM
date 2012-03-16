@@ -80,3 +80,14 @@ componentCreator = SimM $ do
       let ce = ces IntMap.! cId
       let ceCreator = creator ce
       return ceCreator
+
+-- | Get the component lookup table
+componentLookup ::
+  Maybe NodeId                -- ^ Node you want to look on, leave 'Nothing' to set to current node
+  -> ComponentName            -- ^ Name of the component you are looking for
+  -> SimM (Maybe ComponentId) -- ^ 'Just ComponentID' if the component is found, 'Nothing' otherwise
+componentLookup idMaybe cName = SimM $ do
+  curNodeId <- runSimM $ getNodeId
+  let nId   = fromMaybe curNodeId idMaybe
+  nsLookup  <- fmap (nodeComponentLookup . (IntMap.! nId)) $ lift $ gets nodes
+  return $ Map.lookup cName nsLookup
