@@ -1,6 +1,11 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE PatternGuards   #-}
-module SoOSiM.Simulator where
+module SoOSiM.Simulator
+  ( modifyNode
+  , updateMsgBuffer
+  , executeNode
+  )
+where
 
 import Control.Monad.Coroutine
 import Control.Monad.Coroutine.SuspensionFunctors
@@ -14,32 +19,28 @@ import SoOSiM.Types
 import SoOSiM.Util
 
 modifyNode ::
-  NodeId
-  -> (Node -> Node)
+  NodeId            -- ^ ID of the node you want to update
+  -> (Node -> Node) -- ^ Update function
   -> SimMonad ()
 modifyNode i f = do
   ns <- gets nodes
   modify (\s -> s {nodes = adjust f i ns})
 
 updateMsgBuffer ::
-  Int
-  -> ComponentInput
-  -> Node
+  Int               -- ^ Recipient component ID
+  -> ComponentInput -- ^ Actual message
+  -> Node           -- ^ Node containing the component
   -> Node
 updateMsgBuffer recipient msg node =
-  case (nodeComponents node) of
-    CC ces -> node { nodeComponents = CC (adjust (updateMsgBuffer' msg) recipient ces) }
-
-updateMsgBuffer' ::
-  ComponentInput
-  -> ContainerElement s
-  -> ContainerElement s
-updateMsgBuffer' msg ce@(CE {..}) = ce {msgBuffer = msg:msgBuffer}
+    case (nodeComponents node) of
+      CC ces -> node { nodeComponents = CC (adjust go recipient ces) }
+  where
+    go ce@(CE {..}) = ce {msgBuffer = msg:msgBuffer}
 
 handleComponent ::
-  ContainerElement s
+  ComponentContext s
   -> ComponentInput
-  -> SimMonad (ContainerElement s, Maybe ComponentInput)
+  -> SimMonad (ComponentContext s, Maybe ComponentInput)
 handleComponent ce (ComponentMsg sender content)
   | (WaitingForMsg waitingFor f) <- currentStatus ce
   , waitingFor == sender
@@ -62,15 +63,14 @@ handleComponent ce msg = do
 executeNode ::
   Node
   -> SimMonad Node
-executeNode n@(Node nId _ (CC components) _) = do
+executeNode n@(Node nId _ _ (CC components) _) = do
   modify $ (\s -> s {currentNode = nId})
   components' <- T.mapM executeComponent components
   return (n {nodeComponents = CC components'})
 
 executeComponent ::
-  ContainerElement s
-  -> SimMonad (ContainerElement s)
+  ComponentContext s
+  -> SimMonad (ComponentContext s)
 executeComponent ce = do
   (ce',buffer') <- mapAccumLM handleComponent ce (msgBuffer ce)
   return (ce' {msgBuffer = catMaybes buffer'})
-

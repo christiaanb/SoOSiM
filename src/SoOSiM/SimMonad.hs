@@ -14,14 +14,14 @@ import SoOSiM.Util
 -- | Create a new component
 createComponent ::
   ComponentIface s    -- A ComponentIface instance must be defined for the component state
-  => Maybe NodeId     -- ^ Node to create module on, leave to 'Nothing' to create on current node
+  => Maybe NodeId     -- ^ Node to create component on, leave to 'Nothing' to create on current node
   -> s                -- ^ Initial state of the component
-  -> SimM ComponentId -- ^ ComponentId of the created module
+  -> SimM ComponentId -- ^ ComponentId of the created component
 createComponent = error "createComponent"
 
 -- | Send a message synchronously to another component
 sendMessageSync ::
-  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current module
+  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current component
   -> ComponentId    -- ^ Recipient
   -> Dynamic        -- ^ Message content
   -> SimM Dynamic   -- ^ Response from recipient
@@ -33,7 +33,7 @@ sendMessageSync senderMaybe recipient content = SimM $ do
 
 -- | Send a message asynchronously to another component
 sendMessageAsync ::
-  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current module
+  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current component
   -> ComponentId    -- ^ Recipient
   -> Dynamic        -- ^ Message content
   -> SimM ()        -- ^ Call returns immediately
