@@ -1,6 +1,5 @@
 module SoOSiM.Util
   ( module SoOSiM.Util
-  , module Data.IntMap
   , module Data.Dynamic
   )
 where

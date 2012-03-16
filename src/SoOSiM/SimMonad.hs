@@ -2,6 +2,8 @@ module SoOSiM.SimMonad where
 
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
+import Data.IntMap as IntMap
+import Data.Map    as Map
 import Data.Maybe
 
 import SoOSiM.CoroutineT
@@ -73,8 +75,8 @@ componentCreator = SimM $ do
   nId <- runSimM $ getNodeId
   cId <- runSimM $ getComponentId
   ns <- lift $ gets nodes
-  case (nodeComponents (ns!nId)) of
+  case (nodeComponents (ns IntMap.! nId)) of
     CC ces -> do
-      let ce = ces!cId
+      let ce = ces IntMap.! cId
       let ceCreator = creator ce
       return ceCreator

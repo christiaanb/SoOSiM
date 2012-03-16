@@ -8,6 +8,7 @@ import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.Dynamic
 import Data.IntMap
+import Data.Map
 
 import SoOSiM.CoroutineT
 
