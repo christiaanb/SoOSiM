@@ -3,6 +3,8 @@ module MemoryManager.Util where
 import Data.Maybe
 import SoOSiM
 
+import MemoryManager.Types
+
 identifyAddress :: Dynamic -> Maybe Int
 identifyAddress d = case (fromDynamic d) of
   Just (Write i _) -> Just i

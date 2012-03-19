@@ -4,7 +4,6 @@ module SoOSiM
   , NodeId
   , ComponentIface (..)
   , ComponentInput (..)
-  , MemCommand (..)
   , module SoOSiM.SimMonad
   , module Data.Dynamic
   )

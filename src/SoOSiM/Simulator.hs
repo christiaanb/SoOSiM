@@ -14,6 +14,7 @@ import Control.Monad.Trans.Class ()
 import Data.IntMap
 import Data.Maybe
 import qualified Data.Traversable as T
+import Unique
 
 import SoOSiM.Types
 import SoOSiM.Util
@@ -24,38 +25,46 @@ modifyNode ::
   -> SimMonad ()
 modifyNode i f = do
   ns <- gets nodes
-  modify (\s -> s {nodes = adjust f i ns})
+  modify (\s -> s {nodes = adjust f (getKey i) ns})
 
 updateMsgBuffer ::
-  Int               -- ^ Recipient component ID
+  ComponentId       -- ^ Recipient component ID
   -> ComponentInput -- ^ Actual message
   -> Node           -- ^ Node containing the component
-  -> Node
-updateMsgBuffer recipient msg n@(Node {..}) = n { nodeComponents = (adjust go recipient nodeComponents) }
+  -> Node           -- ^ Updated node
+updateMsgBuffer recipient msg n@(Node {..}) = n { nodeComponents = (adjust go (getKey recipient) nodeComponents) }
   where
     go ce@(CC {..}) = ce {msgBuffer = msg:msgBuffer}
 
+-- | Update component context according to simulator event
 handleComponent ::
-  ComponentContext
-  -> ComponentInput
-  -> SimMonad (ComponentContext, Maybe ComponentInput)
-handleComponent (CC status cstate pId buffer) (ComponentMsg sender content)
-  | (WaitingForMsg waitingFor f) <- status
-  , waitingFor == sender
+  ComponentContext   -- ^ Current component context
+  -> ComponentInput  -- ^ Simulator event
+  -> SimMonad (ComponentContext, Maybe ComponentInput) -- ^ Returns tuple of: ((potentially updated) component context, 'Nothing' when event is consumed; 'Just' 'ComponentInput' otherwise)
+
+-- If a component receives the message from the sender it was waiting for
+handleComponent (CC (WaitingForMsg waitingFor f) cstate pId buffer) (ComponentMsg sender content)
+  | waitingFor == sender
   = do
+    -- Run the resumable computation with the message content
     res <- resume $ runSimM (f content)
     case res of
+      -- Computation is finished, return to idle state
       Right a            -> return (CC Idle a pId buffer, Nothing)
+      -- Computation is waiting for a message, store the resumable computation
       Left (Request o c) -> return (CC (WaitingForMsg o (SimM . c)) cstate pId buffer, Nothing)
 
-handleComponent ce@(CC status _ _ _) msg
-  | (WaitingForMsg _ _) <- status
+-- Don't change the execution context if we're not getting the message we're waiting for
+handleComponent ce@(CC (WaitingForMsg _ _) _ _ _) msg
   = return (ce, Just msg)
 
+-- Not in an waiting state, just handle the message
 handleComponent (CC _ cstate pId buffer) msg = do
   res <- resume $ runSimM (componentBehaviour cstate msg)
   case res of
+    -- Computation is finished, return to idle state
     Right a            -> return (CC Idle a pId buffer, Nothing)
+    -- Computation is waiting for a message, store the resumable computation
     Left (Request o c) -> return (CC (WaitingForMsg o (SimM . c)) cstate pId buffer, Nothing)
 
 executeNode ::

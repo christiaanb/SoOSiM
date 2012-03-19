@@ -3,6 +3,7 @@ module MemoryManager where
 import Data.IntMap
 import SoOSiM
 
+import MemoryManager.Types
 import MemoryManager.Util
 
 data MemState =
@@ -37,5 +38,6 @@ memoryManager s (ComponentMsg senderId msgContent) = do
 memoryManager s _ = return s
 
 instance ComponentIface MemState where
-  initState    = MemState [] empty
-  componentFun = memoryManager
+  initState          = MemState [] empty
+  componentName _    = "MemoryManager"
+  componentBehaviour = memoryManager

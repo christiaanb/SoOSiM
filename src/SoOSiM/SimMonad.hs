@@ -19,18 +19,18 @@ createComponent ::
   ComponentIface s    -- A ComponentIface instance must be defined for the component state
   => Maybe NodeId     -- ^ Node to create component on, leave to 'Nothing' to create on current node
   -> s                -- ^ Initial state of the component
-  -> SimM ComponentId -- ^ ComponentId of the created component
+  -> SimM ComponentId -- ^ 'ComponentId' of the created component
 createComponent nodeId_maybe cstate = SimM $ do
     curNodeId      <- lift $ gets currentComponent
     let nId        = fromMaybe curNodeId nodeId_maybe
     parentId       <- runSimM $ componentCreator
-    componentId    <- fmap getKey $ lift getUniqueM
+    componentId    <- lift getUniqueM
     let cc         = CC Idle cstate parentId [Initialize]
     lift $ modifyNode nId (addComponent componentId cc)
     return componentId
   where
     addComponent cId cc n@(Node {..}) =
-      n { nodeComponents      = IntMap.insert cId cc nodeComponents
+      n { nodeComponents      = IntMap.insert (getKey cId) cc nodeComponents
         , nodeComponentLookup = Map.insert (componentName cstate) cId nodeComponentLookup
         }
 
@@ -86,7 +86,7 @@ readMemory ::
   Int -- ^ Address to read
   -> SimM Dynamic
 readMemory i = SimM $ do
-  curNodeId <- lift $ gets currentNode
+  curNodeId <- fmap getKey $ lift $ gets currentNode
   memVal <- fmap (IntMap.lookup i . nodeMemory . (IntMap.! curNodeId)) $ lift $ gets nodes
   case memVal of
     Just val -> return val
@@ -96,11 +96,11 @@ readMemory i = SimM $ do
 componentCreator ::
   SimM ComponentId
 componentCreator = SimM $ do
-  nId <- lift $ gets currentNode
-  cId <- lift $ gets currentComponent
+  nId <- fmap getKey $ lift $ gets currentNode
+  cId <- fmap getKey $ lift $ gets currentComponent
   ns <- lift $ gets nodes
-  let ces = (nodeComponents (ns IntMap.! nId))
-  let ce = ces IntMap.! cId
+  let ces       = (nodeComponents (ns IntMap.! nId))
+  let ce        =  ces IntMap.! cId
   let ceCreator = creator ce
   return ceCreator
 
@@ -108,9 +108,9 @@ componentCreator = SimM $ do
 componentLookup ::
   Maybe NodeId                -- ^ Node you want to look on, leave 'Nothing' to set to current node
   -> ComponentName            -- ^ Name of the component you are looking for
-  -> SimM (Maybe ComponentId) -- ^ 'Just ComponentID' if the component is found, 'Nothing' otherwise
+  -> SimM (Maybe ComponentId) -- ^ 'Just' 'ComponentID' if the component is found, 'Nothing' otherwise
 componentLookup nodeId_maybe cName = SimM $ do
   curNodeId <- lift $ gets currentNode
-  let nId   = fromMaybe curNodeId nodeId_maybe
+  let nId   = getKey $ fromMaybe curNodeId nodeId_maybe
   nsLookup  <- fmap (nodeComponentLookup . (IntMap.! nId)) $ lift $ gets nodes
   return $ Map.lookup cName nsLookup

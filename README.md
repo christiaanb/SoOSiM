@@ -22,6 +22,7 @@ module MemoryManager where
 import Data.IntMap
 import SoOSiM
 
+import MemoryManager.Types
 import MemoryManager.Util
 
 data MemState =
@@ -57,8 +58,9 @@ memoryManager s _ = return s
 
 
 instance ComponentIface MemState where
-  initState    = MemState [] empty
-  componentFun = memoryManager
+  initState          = MemState [] empty
+  componentName _    = "MemoryManager"
+  componentBehaviour = memoryManager
 ```
 
 #### ./examples/MemoryManager/Util.hs
@@ -68,6 +70,8 @@ module MemoryManager.Util where
 import Data.Maybe
 import SoOSiM
 
+import MemoryManager.Types
+
 identifyAddress :: Dynamic -> Maybe Int
 identifyAddress d = case (fromDynamic d) of
   Just (Write i _) -> Just i
@@ -76,6 +80,18 @@ identifyAddress d = case (fromDynamic d) of
 
 memCommand :: Dynamic -> MemCommand
 memCommand = fromJust . fromDynamic
+```
+
+#### ./examples/MemoryManager/Types.hs
+```haskell
+{-# LANGUAGE DeriveDataTypeable #-}
+module MemoryManager.Types where
+
+import SoOSiM
+
+data MemCommand = Read  Int
+                | Write Int Dynamic
+  deriving Typeable
 ```
 
 ### Component definition Step-by-Step
@@ -231,14 +247,15 @@ At the bottom of our `MemoryManager` module we see the following code:
 
 ```haskell
 instance ComponentIface MemState where
-  initState    = MemState [] empty
-  componentFun = memoryManager
+  initState          = MemState [] empty
+  componentName _    = "MemoryManager"
+  componentBehaviour = memoryManager
 ```
 
 Here we define a so-called type-class instance.
 At this moment you do not need to know what a type-class is, just that you need to define this instance if you want your component to be able to be used by the SoOSiM simulator.
 
-This instance must always contain the definitons for `initState` and `componentFun`, where `initState` is the minimal internal state of your component, and `componentFun` is the function defining the behaviour of your component.
+This instance must always contain the definitons for `initState`, `componentName` and `componentBehaviour`, where `initState` is the minimal internal state of your component, `componentName` a function returning the globally unique name of your component, and `componentBehaviour` is the function defining the behaviour of your component.
 The behaviour of your component must always have the type:
 
 ```haskell
@@ -253,6 +270,8 @@ Where `s` is the datatype of your component's internal state.
 ```haskell
 data ComponentInput = ComponentMsg ComponentId Dynamic
                     | NodeMsg      NodeId      Dynamic
+                    | Initialize
+                    | Deinitialize
 ```
 
 #### Accessing the simulator
@@ -332,8 +351,8 @@ toDyn :: Typeable a => a -> Dynamic
 
 ```haskell
 -- | Converts a 'Dynamic' object back into an ordinary Haskell value of the correct type.
-fromDyn :: 
-  Typeable a 
+fromDyn ::
+  Typeable a
   => Dynamic  -- ^ The dynamically-typed object
   -> a        -- ^ A default value
   -> a        -- ^ Returns: the value of the first argument, if it has the correct type, otherwise the value of the second argument.
@@ -341,8 +360,8 @@ fromDyn ::
 
 ```haskell
 -- | Converts a 'Dynamic' object back into an ordinary Haskell value of the correct type.
-fromDynamic :: 
-  Typeable a 
+fromDynamic ::
+  Typeable a
   => Dynamic  -- ^ The dynamically-typed object
   -> a        -- ^ A default value
   -> a        -- ^ Returns: 'Just a', if the dynamically-typed object has the correct type (and 'a' is its value), or 'Nothing' otherwise.
