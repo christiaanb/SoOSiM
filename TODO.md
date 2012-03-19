@@ -7,3 +7,4 @@ TODO
 * Built the individual SoOS components
 * Create the HPC and RT applications
 * Built two minimal SoOS systems running the HPC and RT applications
+* Flesh out synchronous and asynchronous messaging, making it observable by the graphical user interface.
