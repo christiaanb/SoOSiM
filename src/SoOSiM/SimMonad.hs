@@ -41,8 +41,8 @@ sendMessageSync ::
   -> Dynamic        -- ^ Message content
   -> SimM Dynamic   -- ^ Response from recipient
 sendMessageSync senderMaybe recipient content = SimM $ do
-  nId <- runSimM getNodeId
-  mId <- runSimM getComponentId
+  nId <- lift $ gets currentNode
+  mId <- lift $ gets currentComponent
   lift $ modifyNode nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
   request recipient
 
@@ -76,7 +76,7 @@ writeMemory ::
   -> Dynamic -- ^ Value to write
   -> SimM ()
 writeMemory i val = SimM $ do
-    curNodeId <- runSimM getNodeId
+    curNodeId <- lift $ gets currentNode
     lift $ modifyNode curNodeId writeVal
   where
     writeVal n@(Node {..}) = n { nodeMemory = IntMap.insert i val nodeMemory }
@@ -86,7 +86,7 @@ readMemory ::
   Int -- ^ Address to read
   -> SimM Dynamic
 readMemory i = SimM $ do
-  curNodeId <- runSimM getNodeId
+  curNodeId <- lift $ gets currentNode
   memVal <- fmap (IntMap.lookup i . nodeMemory . (IntMap.! curNodeId)) $ lift $ gets nodes
   case memVal of
     Just val -> return val
@@ -96,8 +96,8 @@ readMemory i = SimM $ do
 componentCreator ::
   SimM ComponentId
 componentCreator = SimM $ do
-  nId <- runSimM $ getNodeId
-  cId <- runSimM $ getComponentId
+  nId <- lift $ gets currentNode
+  cId <- lift $ gets currentComponent
   ns <- lift $ gets nodes
   let ces = (nodeComponents (ns IntMap.! nId))
   let ce = ces IntMap.! cId
@@ -109,8 +109,8 @@ componentLookup ::
   Maybe NodeId                -- ^ Node you want to look on, leave 'Nothing' to set to current node
   -> ComponentName            -- ^ Name of the component you are looking for
   -> SimM (Maybe ComponentId) -- ^ 'Just ComponentID' if the component is found, 'Nothing' otherwise
-componentLookup idMaybe cName = SimM $ do
-  curNodeId <- runSimM getNodeId
-  let nId   = fromMaybe curNodeId idMaybe
+componentLookup nodeId_maybe cName = SimM $ do
+  curNodeId <- lift $ gets currentNode
+  let nId   = fromMaybe curNodeId nodeId_maybe
   nsLookup  <- fmap (nodeComponentLookup . (IntMap.! nId)) $ lift $ gets nodes
   return $ Map.lookup cName nsLookup
