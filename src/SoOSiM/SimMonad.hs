@@ -104,7 +104,7 @@ componentCreator = SimM $ do
   let ceCreator = creator ce
   return ceCreator
 
--- | Get the component lookup table
+-- | Get the unique 'ComponentId' of a certain component
 componentLookup ::
   Maybe NodeId                -- ^ Node you want to look on, leave 'Nothing' to set to current node
   -> ComponentName            -- ^ Name of the component you are looking for

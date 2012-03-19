@@ -19,9 +19,12 @@ type ComponentName = String
 
 -- | Type class that defines every OS component
 class ComponentIface s where
-  initState          :: s                             -- ^ The minimal internal state of your component
-  componentName      :: s -> ComponentName            -- ^ A function returning the unique global name of your component
-  componentBehaviour :: s -> ComponentInput -> SimM s -- ^ The function defining the behaviour of your component
+  -- | The minimal internal state of your component
+  initState          :: s
+  -- | A function returning the unique global name of your component
+  componentName      :: s -> ComponentName
+  -- | The function defining the behaviour of your component
+  componentBehaviour :: s -> ComponentInput -> SimM s
 
 -- | Context of a running component in the simulator.
 --
