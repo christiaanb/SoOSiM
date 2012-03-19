@@ -2,6 +2,7 @@
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleInstances          #-}
 module SoOSiM.Types where
 
 import Control.Monad.Coroutine
@@ -11,6 +12,7 @@ import Control.Monad.Trans.Class ()
 import Data.Dynamic
 import Data.IntMap
 import Data.Map
+import UniqSupply
 
 newtype SimM a = SimM { runSimM :: Coroutine (Request Int Dynamic) SimMonad a }
   deriving Monad
@@ -21,30 +23,33 @@ data SimState =
   SimState { currentComponent :: ComponentId
            , currentNode      :: NodeId
            , nodes            :: IntMap Node
+           , uniqueSupply     :: UniqSupply
            }
 
+instance MonadUnique SimMonad where
+  getUniqueSupplyM = gets uniqueSupply
+
 class ComponentIface s where
-  initState    :: s
-  componentFun :: s -> ComponentInput -> SimM s
+  initState          :: s
+  componentName      :: s -> ComponentName
+  componentBehaviour :: s -> ComponentInput -> SimM s
 
 type ComponentId   = Int
 type ComponentName = String
 
 data ComponentInput = ComponentMsg ComponentId Dynamic
                     | NodeMsg NodeId Dynamic
+                    | Initialize
+                    | Deinitialize
 
 data ComponentStatus a = Idle | WaitingForMsg ComponentId (Dynamic -> SimM a) | Running
 
-data ComponentContext s =
-  CE { currentStatus  :: ComponentStatus s
-     , componentState :: s
-     , creator        :: ComponentId
-     , msgBuffer      :: [ComponentInput]
-     , componentName  :: ComponentName
-     , compFun        :: s -> ComponentInput -> SimM s
+data ComponentContext = forall s . ComponentIface s =>
+  CC { currentStatus      :: ComponentStatus s
+     , componentState     :: s
+     , creator            :: ComponentId
+     , msgBuffer          :: [ComponentInput]
      }
-
-data ComponentContainer = forall s . ComponentIface s => CC (IntMap (ComponentContext s))
 
 type NodeId   = Int
 data NodeInfo = NodeInfo
@@ -53,7 +58,7 @@ data Node =
   Node { nodeId              :: NodeId
        , nodeInfo            :: NodeInfo
        , nodeComponentLookup :: Map ComponentName ComponentId
-       , nodeComponents      :: ComponentContainer
+       , nodeComponents      :: IntMap ComponentContext
        , nodeMemory          :: IntMap Dynamic
        }
 

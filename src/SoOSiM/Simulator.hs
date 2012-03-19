@@ -31,46 +31,44 @@ updateMsgBuffer ::
   -> ComponentInput -- ^ Actual message
   -> Node           -- ^ Node containing the component
   -> Node
-updateMsgBuffer recipient msg node =
-    case (nodeComponents node) of
-      CC ces -> node { nodeComponents = CC (adjust go recipient ces) }
+updateMsgBuffer recipient msg n@(Node {..}) = n { nodeComponents = (adjust go recipient nodeComponents) }
   where
-    go ce@(CE {..}) = ce {msgBuffer = msg:msgBuffer}
+    go ce@(CC {..}) = ce {msgBuffer = msg:msgBuffer}
 
 handleComponent ::
-  ComponentContext s
+  ComponentContext
   -> ComponentInput
-  -> SimMonad (ComponentContext s, Maybe ComponentInput)
-handleComponent ce (ComponentMsg sender content)
-  | (WaitingForMsg waitingFor f) <- currentStatus ce
+  -> SimMonad (ComponentContext, Maybe ComponentInput)
+handleComponent (CC status cstate pId buffer) (ComponentMsg sender content)
+  | (WaitingForMsg waitingFor f) <- status
   , waitingFor == sender
   = do
     res <- resume $ runSimM (f content)
     case res of
-      Right a            -> return (ce {currentStatus = Idle, componentState = a}  , Nothing)
-      Left (Request o c) -> return (ce {currentStatus = WaitingForMsg o (SimM . c)}, Nothing)
+      Right a            -> return (CC Idle a pId buffer, Nothing)
+      Left (Request o c) -> return (CC (WaitingForMsg o (SimM . c)) cstate pId buffer, Nothing)
 
-handleComponent ce msg
-  | (WaitingForMsg _ _) <- currentStatus ce
+handleComponent ce@(CC status _ _ _) msg
+  | (WaitingForMsg _ _) <- status
   = return (ce, Just msg)
 
-handleComponent ce msg = do
-  res <- resume $ runSimM ((compFun ce) (componentState ce) msg)
+handleComponent (CC _ cstate pId buffer) msg = do
+  res <- resume $ runSimM (componentBehaviour cstate msg)
   case res of
-    Right a            -> return (ce {currentStatus = Idle, componentState = a}  , Nothing)
-    Left (Request o c) -> return (ce {currentStatus = WaitingForMsg o (SimM . c)}, Nothing)
+    Right a            -> return (CC Idle a pId buffer, Nothing)
+    Left (Request o c) -> return (CC (WaitingForMsg o (SimM . c)) cstate pId buffer, Nothing)
 
 executeNode ::
   Node
   -> SimMonad Node
-executeNode n@(Node nId _ _ (CC components) _) = do
+executeNode n@(Node nId _ _ components _) = do
   modify $ (\s -> s {currentNode = nId})
   components' <- T.mapM executeComponent components
-  return (n {nodeComponents = CC components'})
+  return (n {nodeComponents = components'})
 
 executeComponent ::
-  ComponentContext s
-  -> SimMonad (ComponentContext s)
+  ComponentContext
+  -> SimMonad ComponentContext
 executeComponent ce = do
   (ce',buffer') <- mapAccumLM handleComponent ce (msgBuffer ce)
   return (ce' {msgBuffer = catMaybes buffer'})

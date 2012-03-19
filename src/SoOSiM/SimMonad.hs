@@ -11,6 +11,8 @@ import Data.Maybe
 import SoOSiM.Simulator
 import SoOSiM.Types
 import SoOSiM.Util
+import Unique
+import UniqSupply
 
 -- | Create a new component
 createComponent ::
@@ -18,7 +20,19 @@ createComponent ::
   => Maybe NodeId     -- ^ Node to create component on, leave to 'Nothing' to create on current node
   -> s                -- ^ Initial state of the component
   -> SimM ComponentId -- ^ ComponentId of the created component
-createComponent = error "createComponent"
+createComponent nodeId_maybe cstate = SimM $ do
+    curNodeId      <- lift $ gets currentComponent
+    let nId        = fromMaybe curNodeId nodeId_maybe
+    parentId       <- runSimM $ componentCreator
+    componentId    <- fmap getKey $ lift getUniqueM
+    let cc         = CC Idle cstate parentId [Initialize]
+    lift $ modifyNode nId (addComponent componentId cc)
+    return componentId
+  where
+    addComponent cId cc n@(Node {..}) =
+      n { nodeComponents      = IntMap.insert cId cc nodeComponents
+        , nodeComponentLookup = Map.insert (componentName cstate) cId nodeComponentLookup
+        }
 
 -- | Send a message synchronously to another component
 sendMessageSync ::
@@ -85,11 +99,10 @@ componentCreator = SimM $ do
   nId <- runSimM $ getNodeId
   cId <- runSimM $ getComponentId
   ns <- lift $ gets nodes
-  case (nodeComponents (ns IntMap.! nId)) of
-    CC ces -> do
-      let ce = ces IntMap.! cId
-      let ceCreator = creator ce
-      return ceCreator
+  let ces = (nodeComponents (ns IntMap.! nId))
+  let ce = ces IntMap.! cId
+  let ceCreator = creator ce
+  return ceCreator
 
 -- | Get the component lookup table
 componentLookup ::
