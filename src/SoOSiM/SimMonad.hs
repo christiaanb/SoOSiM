@@ -92,7 +92,7 @@ readMemory i = SimM $ do
     Just val -> return val
     Nothing  -> error $ "Trying to read empty memory location: " ++ show i ++ " from Node: " ++ show curNodeId
 
--- | Return the component Id of the component that created the current component
+-- | Return the 'ComponentId' of the component that created the current component
 componentCreator ::
   SimM ComponentId
 componentCreator = SimM $ do
