@@ -50,6 +50,7 @@ data ComponentInput = ComponentMsg ComponentId Dynamic -- ^ A message send anoth
                     | NodeMsg NodeId Dynamic           -- ^ A message send by a node: the first field is the 'NodeId' of the sending node, the second field the message content
                     | Initialize                       -- ^ Event send when a component is first created
                     | Deinitialize                     -- ^ Event send when a component is about to be removed
+                    | Tick                             -- ^ Event send every simulation round
 
 type NodeId   = Unique
 -- | Meta-data describing the functionaly of the computing node, currently just a singleton type.
@@ -83,7 +84,7 @@ data Node =
 --   'resume <comp>'
 --
 newtype SimM a = SimM { runSimM :: Coroutine (Request Unique Dynamic) SimMonad a }
-  deriving Monad
+  deriving (Monad, Functor)
 
 -- | The internal monad of the simulator is currently a simple state-monad wrapping IO
 type SimMonad  = StateT SimState IO
