@@ -4,7 +4,7 @@ module HeatMap.Types where
 import SoOSiM
 import Data.IntMap
 
-data HMMsg = Compute | Done
+data HMMsg = NewState HMWorker | Compute | Done
   deriving (Eq, Typeable)
 
 data HMState = HMState
@@ -18,3 +18,4 @@ data HMWorker = HMWorker
   , rdLocs    :: (Int,[Int],[Int])
   , wtransfer :: (Int,Int,Int)
   }
+  deriving (Eq, Typeable)

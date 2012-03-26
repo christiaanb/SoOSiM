@@ -5,6 +5,8 @@ import qualified Data.IntMap as IM
 
 import SoOSiM
 import MemoryManager.Types
+import Scheduler
+
 import HeatMap.Types
 import HeatMap.Util
 
@@ -25,7 +27,12 @@ heatMap hmState Initialize = do
   let wlocs = [ dimTrans w h x (0,0) + (w*h) | x <- [0..(w*h)-1]]
 
   -- Instantiate worker threads
-  workerIDs <- mapM (\(n,w,r) -> createComponent Nothing (HMWorker w r (transfer hmState))) (zip3 [0..] wlocs rlocs)
+  registerComponent (initState :: HMWorker)
+  workerIDs <- mapM (\(w,r) -> do
+                        workerID <- createComponentRequest "HeatMapWorker"
+                        sendMessageAsync Nothing workerID (toDyn $ NewState (HMWorker w r (transfer hmState)))
+                        return workerID
+                    ) (zip wlocs rlocs)
 
   -- Make the worker threads do actual work
   let workers' = IM.fromList (zip (map getKey workerIDs) (repeat Compute))
@@ -60,6 +67,9 @@ heatMap hmState (ComponentMsg senderId content) | (Just Done) <- fromDynamic con
 
 heatMap hmState _ = return hmState
 
+
+heatMapWorker hmwState (ComponentMsg _ content) | (Just (NewState s')) <- fromDynamic content = do
+  return s'
 
 heatMapWorker hmwState (ComponentMsg _ content) | (Just Compute) <- fromDynamic content = do
   -- Extract configuration
