@@ -14,24 +14,32 @@ import SoOSiM.Util
 import Unique
 import UniqSupply
 
+-- | Register a component interface with the simulator
+registerComponent ::
+  ComponentIface s
+  => s
+  -> SimM ()
+registerComponent cstate = SimM $ do
+  let cc         = CC Idle cstate undefined [Initialize]
+  lift $ modify (\s -> s {componentMap = Map.insert (componentName cstate) cc (componentMap s)})
+
 -- | Create a new component
 createComponent ::
-  ComponentIface s    -- A ComponentIface instance must be defined for the component state
-  => Maybe NodeId     -- ^ Node to create component on, leave to 'Nothing' to create on current node
-  -> s                -- ^ Initial state of the component
+  Maybe NodeId        -- ^ Node to create component on, leave to 'Nothing' to create on current node
+  -> String           -- ^ Name of the registered component
   -> SimM ComponentId -- ^ 'ComponentId' of the created component
-createComponent nodeId_maybe cstate = SimM $ do
+createComponent nodeId_maybe cname = SimM $ do
     curNodeId      <- lift $ gets currentComponent
     let nId        = fromMaybe curNodeId nodeId_maybe
     parentId       <- runSimM $ componentCreator
     componentId    <- lift getUniqueM
-    let cc         = CC Idle cstate parentId [Initialize]
-    lift $ modifyNode nId (addComponent componentId cc)
+    cc             <- fmap (fromJust . Map.lookup cname) $ lift $ gets componentMap
+    lift $ modifyNode nId (addComponent componentId (cc {creator = parentId}))
     return componentId
   where
     addComponent cId cc n@(Node {..}) =
       n { nodeComponents      = IntMap.insert (getKey cId) cc nodeComponents
-        , nodeComponentLookup = Map.insert (componentName cstate) cId nodeComponentLookup
+        , nodeComponentLookup = Map.insert cname cId nodeComponentLookup
         }
 
 -- | Send a message synchronously to another component

@@ -2,6 +2,8 @@
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
 module SoOSiM.Types where
 
 import Control.Monad.Coroutine
@@ -16,6 +18,8 @@ import UniqSupply
 
 type ComponentId   = Unique
 type ComponentName = String
+
+deriving instance Typeable Unique
 
 -- | Type class that defines every OS component
 class ComponentIface s where
@@ -95,6 +99,7 @@ data SimState =
            , currentNode      :: NodeId       -- ^ The 'NodeId' of the node containing the component currently under evaluation
            , nodes            :: IntMap Node  -- ^ The set of nodes comprising the entire system
            , uniqueSupply     :: UniqSupply   -- ^ Unlimited supply of unique values
+           , componentMap     :: Map String ComponentContext
            }
 
 instance MonadUnique SimMonad where
