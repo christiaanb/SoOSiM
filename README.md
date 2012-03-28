@@ -280,7 +280,7 @@ class ComponentIface s where
 
 #### Simulator Events
 ```haskell
-data ComponentInput 
+data ComponentInput
   = ComponentMsg ComponentId Dynamic -- ^ A message send another component: the field argument is the 'ComponentId' of the sender, the second field the message content
   | Initialize                       -- ^ Event send when a component is first created
   | Deinitialize                     -- ^ Event send when a component is about to be removed
@@ -387,8 +387,7 @@ fromDyn ::
 fromDynamic ::
   Typeable a
   => Dynamic  -- ^ The dynamically-typed object
-  -> a        -- ^ A default value
-  -> a        -- ^ Returns: 'Just a', if the dynamically-typed object has the correct type (and 'a' is its value), or 'Nothing' otherwise.
+  -> Maybe a  -- ^ Returns: 'Just a', if the dynamically-typed object has the correct type (and 'a' is its value), or 'Nothing' otherwise.
 ```
 
 References
