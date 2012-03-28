@@ -81,25 +81,29 @@ createNode = error "createNode"
 
 -- | Write memory of local node
 writeMemory ::
-  Int        -- ^ Address to write
-  -> Dynamic -- ^ Value to write
+  Maybe NodeId -- ^ Node you want to write on, leave 'Nothing' to set to current node
+  -> Int       -- ^ Address to write
+  -> Dynamic   -- ^ Value to write
   -> SimM ()
-writeMemory i val = SimM $ do
+writeMemory nodeId_maybe i val = SimM $ do
     curNodeId <- lift $ gets currentNode
-    lift $ modifyNode curNodeId writeVal
+    let nodeId = fromMaybe curNodeId nodeId_maybe
+    lift $ modifyNode nodeId writeVal
   where
     writeVal n@(Node {..}) = n { nodeMemory = IntMap.insert i val nodeMemory }
 
 -- | Read memory of local node
 readMemory ::
-  Int -- ^ Address to read
+  Maybe NodeId -- ^ Node you want to look on, leave 'Nothing' to set to current node
+  -> Int       -- ^ Address to read
   -> SimM Dynamic
-readMemory i = SimM $ do
-  curNodeId <- fmap getKey $ lift $ gets currentNode
-  memVal <- fmap (IntMap.lookup i . nodeMemory . (IntMap.! curNodeId)) $ lift $ gets nodes
+readMemory nodeId_maybe i = SimM $ do
+  curNodeId <- lift $ gets currentNode
+  let nodeId = getKey $ fromMaybe curNodeId nodeId_maybe
+  memVal <- fmap (IntMap.lookup i . nodeMemory . (IntMap.! nodeId)) $ lift $ gets nodes
   case memVal of
     Just val -> return val
-    Nothing  -> error $ "Trying to read empty memory location: " ++ show i ++ " from Node: " ++ show curNodeId
+    Nothing  -> error $ "Trying to read empty memory location: " ++ show i ++ " from Node: " ++ show nodeId
 
 -- | Return the 'ComponentId' of the component that created the current component
 componentCreator ::
