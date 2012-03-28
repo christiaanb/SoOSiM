@@ -25,13 +25,15 @@ registerComponent cstate = SimM $ do
 
 -- | Create a new component
 createComponent ::
-  Maybe NodeId        -- ^ Node to create component on, leave to 'Nothing' to create on current node
-  -> String           -- ^ Name of the registered component
-  -> SimM ComponentId -- ^ 'ComponentId' of the created component
-createComponent nodeId_maybe cname = SimM $ do
+  Maybe NodeId         -- ^ Node to create component on, leave to 'Nothing' to create on current node
+  -> Maybe ComponentId -- ^ ComponentId to set as parent, set to 'Nothing' to use own ComponentId
+  -> String            -- ^ Name of the registered component
+  -> SimM ComponentId  -- ^ 'ComponentId' of the created component
+createComponent nodeId_maybe parentId_maybe cname = SimM $ do
     curNodeId      <- lift $ gets currentComponent
     let nId        = fromMaybe curNodeId nodeId_maybe
-    parentId       <- runSimM $ componentCreator
+    pId            <- runSimM $ componentCreator
+    let parentId   = fromMaybe pId parentId_maybe
     componentId    <- lift getUniqueM
     cc             <- fmap (fromJust . Map.lookup cname) $ lift $ gets componentMap
     lift $ modifyNode nId (addComponent componentId (cc {creator = parentId}))
@@ -42,25 +44,25 @@ createComponent nodeId_maybe cname = SimM $ do
         , nodeComponentLookup = Map.insert cname cId nodeComponentLookup
         }
 
--- | Send a message synchronously to another component
-sendMessageSync ::
-  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current component
-  -> ComponentId    -- ^ Recipient
-  -> Dynamic        -- ^ Message content
+-- | Synchronously invoke another component
+invoke ::
+  Maybe ComponentId -- ^ Caller, leave 'Nothing' to set to current module
+  -> ComponentId    -- ^ Callee
+  -> Dynamic        -- ^ Argument
   -> SimM Dynamic   -- ^ Response from recipient
-sendMessageSync senderMaybe recipient content = SimM $ do
+invoke senderMaybe recipient content = SimM $ do
   nId <- lift $ gets currentNode
   mId <- lift $ gets currentComponent
   lift $ modifyNode nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
   request recipient
 
--- | Send a message asynchronously to another component
-sendMessageAsync ::
-  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current component
-  -> ComponentId    -- ^ Recipient
-  -> Dynamic        -- ^ Message content
+-- | Invoke another component, don't wait for a response
+invokeNoWait ::
+  Maybe ComponentId -- ^ Caller, leave 'Nothing' to set to current module
+  -> ComponentId    -- ^ Callee
+  -> Dynamic        -- ^ Argument
   -> SimM ()        -- ^ Call returns immediately
-sendMessageAsync = error "sendMessageAsync"
+invokeNoWait = error "invokeNoWait"
 
 -- | Get the component id of your component
 getComponentId ::
@@ -74,8 +76,7 @@ getNodeId = SimM $ lift $ gets currentNode
 
 -- | Create a new node
 createNode ::
-  Maybe NodeId   -- ^ Connected node, leave 'Nothing' to set to current node
-  -> SimM NodeId -- ^ NodeId of the created node
+  SimM NodeId -- ^ NodeId of the created node
 createNode = error "createNode"
 
 -- | Write memory of local node
