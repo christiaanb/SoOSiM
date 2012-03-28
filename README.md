@@ -276,21 +276,38 @@ data ComponentInput = ComponentMsg ComponentId Dynamic
 
 #### Accessing the simulator
 ```haskell
--- | Send a message synchronously to another component
-sendMessageSync ::
-  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current module
-  -> ComponentId    -- ^ Recipient
-  -> Dynamic        -- ^ Message content
+-- | Register a component interface with the simulator
+registerComponent ::
+  ComponentIface s
+  => s
+  -> SimM ()
+```
+
+```haskell
+-- | Create a new component
+createComponent ::
+  Maybe NodeId         -- ^ Node to create component on, set to 'Nothing' to create on current node
+  -> Maybe ComponentId -- ^ ComponentId to set as parent, set to 'Nothing' to use own ComponentId
+  -> String            -- ^ Name of the registered component
+  -> SimM ComponentId  -- ^ 'ComponentId' of the created component
+```
+
+```haskell
+-- | Synchronously invoke another component
+invoke ::
+  Maybe ComponentId -- ^ Caller, leave 'Nothing' to set to current module
+  -> ComponentId    -- ^ Callee
+  -> Dynamic        -- ^ Argument
   -> SimM Dynamic   -- ^ Response from recipient
 ```
 
 ```haskell
--- | Send a message asynchronously to another component
-sendMessageAsync ::
-  Maybe ComponentId -- ^ Sender, leave 'Nothing' to set to current module
-  -> ComponentId    -- ^ Recipient
-  -> Dynamic        -- ^ Message content
-  -> SimM ()        -- ^ Call return immediately
+-- | Invoke another component, don't wait for a response
+invokeNoWait ::
+  Maybe ComponentId -- ^ Caller, leave 'Nothing' to set to current module
+  -> ComponentId    -- ^ Callee
+  -> Dynamic        -- ^ Argument
+  -> SimM ()        -- ^ Call returns immediately
 ```
 
 ```haskell
@@ -312,34 +329,28 @@ componentCreator ::
 ```
 
 ```haskell
--- | Write memory of local node
+-- | Write memory of a node
 writeMemory ::
-  Int        -- ^ Address to write
-  -> Dynamic -- ^ Value to write
+  Maybe NodeId -- ^ Node you want to write on, leave 'Nothing' to set to current node
+  -> Int       -- ^ Address to write
+  -> Dynamic   -- ^ Value to write
   -> SimM ()
 ```
 
 ```haskell
--- | Read memory of local node
+-- | Read memory of a node
 readMemory ::
-  Int -- ^ Address to read
+  -> Maybe NodeId -- ^ Node you want to look on, leave 'Nothing' to set to current node
+  -> Int          -- ^ Address to read
   -> SimM Dynamic
 ```
 
 ```haskell
--- | Create a new node
-createNode ::
-  Maybe NodeId   -- ^ Connected node, leave 'Nothing' to set to current node
-  -> SimM NodeId -- ^ NodeId of the created node
-```
-
-```haskell
--- | Create a new component
-createComponent ::
-  ComponentIface s    -- A ComponentIface instance must be defined for the component state
-  => Maybe NodeId     -- ^ Node to create module on, leave to 'Nothing' to create on current node
-  -> s                -- ^ Initial state of the component
-  -> SimM ComponentId -- ^ ComponentId of the created module
+-- | Get the unique 'ComponentId' of a certain component
+componentLookup ::
+  Maybe NodeId                -- ^ Node you want to look on, leave 'Nothing' to set to current node
+  -> ComponentName            -- ^ Name of the component you are looking for
+  -> SimM (Maybe ComponentId) -- ^ 'Just' 'ComponentID' if the component is found, 'Nothing' otherwise
 ```
 
 #### Handling `Dynamic` Values
