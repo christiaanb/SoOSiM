@@ -266,12 +266,25 @@ Where `s` is the datatype of your component's internal state.
 
 ## SoOSiM API
 
+#### Component Interface Type Class
+```haskell
+-- | Type class that defines every OS component
+class ComponentIface s where
+  -- | The minimal internal state of your component
+  initState          :: s
+  -- | A function returning the unique global name of your component
+  componentName      :: s -> ComponentName
+  -- | The function defining the behaviour of your component
+  componentBehaviour :: s -> ComponentInput -> SimM s
+```
+
 #### Simulator Events
 ```haskell
-data ComponentInput = ComponentMsg ComponentId Dynamic
-                    | NodeMsg      NodeId      Dynamic
-                    | Initialize
-                    | Deinitialize
+data ComponentInput 
+  = ComponentMsg ComponentId Dynamic -- ^ A message send another component: the field argument is the 'ComponentId' of the sender, the second field the message content
+  | Initialize                       -- ^ Event send when a component is first created
+  | Deinitialize                     -- ^ Event send when a component is about to be removed
+  | Tick                             -- ^ Event send every simulation round
 ```
 
 #### Accessing the simulator
