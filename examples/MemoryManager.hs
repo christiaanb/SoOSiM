@@ -20,18 +20,18 @@ memoryManager s (ComponentMsg senderId msgContent) = do
         True  ->
           case (memCommand msgContent) of
             Read _  -> do
-              addrVal <- readMemory addr
-              sendMessageAsync Nothing senderId addrVal
+              addrVal <- readMemory Nothing addr
+              invokeNoWait Nothing senderId addrVal
               return s
             Write _ val -> do
-              writeMemory addr (toDyn val)
-              sendMessageAsync Nothing senderId (toDyn True)
+              writeMemory Nothing addr (toDyn val)
+              invokeNoWait Nothing senderId (toDyn True)
               return s
         False -> do
           creator <- componentCreator
           let remote = findWithDefault creator addr (remoteAddress s)
-          response <- sendMessageSync Nothing remote msgContent
-          sendMessageAsync Nothing senderId response
+          response <- invoke Nothing remote msgContent
+          invokeNoWait Nothing senderId response
           return s
     Nothing -> return s
 
