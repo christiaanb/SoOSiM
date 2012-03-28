@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
 module SoOSiM.Types where
 
 import Control.Monad.Coroutine
