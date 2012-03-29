@@ -3,7 +3,7 @@
 module SoOSiM.Simulator
   ( modifyNode
   , updateMsgBuffer
-  , executeNode
+  , execStep
   )
 where
 
@@ -12,12 +12,10 @@ import Control.Monad.Coroutine.SuspensionFunctors
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.IntMap
-import Data.Maybe
 import qualified Data.Traversable as T
 import Unique
 
 import SoOSiM.Types
-import SoOSiM.Util
 
 modifyNode ::
   NodeId            -- ^ ID of the node you want to update
@@ -79,5 +77,28 @@ executeComponent ::
   ComponentContext
   -> SimMonad ComponentContext
 executeComponent ce = do
-  (ce',buffer') <- mapAccumLM handleComponent ce (msgBuffer ce)
-  return (ce' {msgBuffer = catMaybes buffer'})
+  (ce',buffer') <- mapUntilNothingM handleComponent ce (msgBuffer ce)
+  return (ce' {msgBuffer = buffer'})
+
+mapUntilNothingM ::
+  (ComponentContext -> ComponentInput -> SimMonad (ComponentContext, Maybe ComponentInput))
+  -> ComponentContext
+  -> [ComponentInput]
+  -> SimMonad (ComponentContext, [ComponentInput])
+mapUntilNothingM _ ce [] = return (ce,[])
+mapUntilNothingM f ce (inp:inps) = do
+  (ce',inp_maybe) <- f ce inp
+  case inp_maybe of
+    Nothing -> return (ce',inps)
+    Just _  -> do
+      (ce'',inps') <- mapUntilNothingM f ce inps
+      return (ce'',inp:inps')
+
+tick :: SimMonad ()
+tick = do
+  ns <- gets nodes
+  ns' <- T.mapM executeNode ns
+  modify (\s -> s {nodes = ns'})
+
+execStep :: SimState -> IO SimState
+execStep = execStateT tick
