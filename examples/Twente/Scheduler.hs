@@ -2,15 +2,16 @@
 module Scheduler where
 
 import Data.Maybe
-import Control.Monad.IfElse
 
 import Code
 import Node
 import SoOSiM
 import CodeDeployer
 
-data SchedulerState = SchedulerState (Maybe AppData)
-                                     [ComponentId]
+data SchedulerState = SchedulerState
+  { appDataM   :: (Maybe AppData)
+  , runningIds :: [ComponentId]
+  }
 
 data AppData     = AppData [(BlockName, BlockCode, ResourceReq)]
  deriving (Typeable)
@@ -47,6 +48,7 @@ instance ComponentIface SchedulerState where
  componentName _    = "Scheduler"
 
  componentBehaviour state msg = do
+   -- Find the components that we need and defer the operation
    appHndlrIdM     <- componentLookup Nothing "ApplicationHandler"
    resMgrIdM       <- componentLookup Nothing "ResourceManager"
    codeDeployerIdM <- componentLookup Nothing "CodeDeployer"
@@ -54,55 +56,69 @@ instance ComponentIface SchedulerState where
                   resMgrId       <- resMgrIdM
                   codeDeployerId <- codeDeployerIdM
                   return (SchedulerDependencyIds appHndlrId resMgrId codeDeployerId)
-   maybe (return state) (componentBehaviourWithIds state msg) argsM
+   maybe' argsM
+     (return state)
+     (componentBehaviourWithIds state msg)
 
+-- | Handles incoming messages
 componentBehaviourWithIds :: SchedulerState -> ComponentInput -> SchedulerDependencyIds -> SimM SchedulerState
-componentBehaviourWithIds state@(SchedulerState appD ids) (ComponentMsg _ content) deps
-   | Just (Execute f) <- schedulerAction
-   = do rsp <- invoke Nothing (appHndlr deps) (toDyn (AppHndlrMsg f))
-        case fromDynamic rsp of
-         Nothing -> return state
-         Just bs -> let (bName, bCode, resReq) = head bs
-                    in startThreads (SchedulerState (Just (AppData bs)) ids) 1 bName bCode resReq deps
+componentBehaviourWithIds state msg deps
+   -- Execute File
+   | ComponentMsg _ content <- msg
+   , Just (Execute f)       <- fromDynamic msg
+   = do -- Obtain list of block names, codes and necessary resources
+        rsp <- invoke Nothing (appHndlr deps) (toDyn (AppHndlrMsg f)
+        -- If a list has been obtained, execute the first block
+        maybe' rsp
+          (return state)
+          (\bs@(b:_) -> let state' = state {appDataM = Just (AppData bs)}
+                        in startThreads state' 1 b deps)
      
-   | Just (CreateThreads numThreads blockName) <- schedulerAction
-   = let block = lookupBlock state blockName
-     in case block of
-          Nothing      -> return state
-          (Just (b,r)) -> startThreads state numThreads blockName b r deps
- where schedulerAction :: Maybe SchedulerMsg
-       schedulerAction = fromDynamic content
+   -- Create n threads running the block blockName (if it exists)
+   | ComponentMsg _ content <- msg
+   , Just (CreateThreads numThreads blockName) <- fromDynamic msg
+   , Just (b,r) <- lookupBlock state blockName
+   = startThreads state numThreads (blockName, b, r) deps)
 
-       lookupBlock :: SchedulerState -> BlockName -> Maybe (BlockCode, ResourceReq)
-       lookupBlock (SchedulerState Nothing _)             _   = Nothing
-       lookupBlock (SchedulerState (Just (AppData xs)) _) bName | null ls   = Nothing
-                                                                | otherwise = Just (head ls)
-          where ls = [ (c, r) | (b,c,r) <- xs, b == bName]
+   --
+   | otherwise = return state
 
-componentBehaviourWithIds state _ _ = return state
+ where lookupBlock :: SchedulerState -> BlockName -> Maybe (BlockCode, ResourceReq)
+       lookupBlock st bname = do
+         (AppData xs) <- appDataM st
+         listToMaybe [ (c, r) | (b,c,r) <- xs, b == bName]
 
 -- Starts several threads and stores the new Ids in the state
-startThreads :: SchedulerState -> Int -> BlockName -> BlockCode -> ResourceReq -> SchedulerDependencyIds -> SimM SchedulerState
-startThreads state@(SchedulerState appD ids) numThreads bname b r deps = do
-  -- nodeDyn <- sendMessageSync Nothing (resMgr deps) (toDyn (RequestResource (numThreads, r)))
+startThreads :: SchedulerState -> Int -> (BlockName, BlockCode, ResourceReq) -> SchedulerDependencyIds -> SimM SchedulerState
+startThreads state numThreads (bname, b, r) deps = do
   nodeDyn <- invoke Nothing (resMgr deps) (toDyn (RequestResource numThreads r))
-  case fromDynamic nodeDyn of
-    (Just nodes) -> do newIds <- mapM (\node -> deployAndCompute state
-                                          (bname ++ show (nodeId node)) b node deps)
-                                      nodes
-                       return (SchedulerState appD (catMaybes newIds ++ ids))
-    _            -> return state
 
+  -- If we get a list of nodes, deploy the same code in each one of them
+  maybe' (fromDynamic nodeDyn) (return state) $ \nodes -> do
+    -- deploy the threads and get the component ids
+    newIds <- mapM (\node -> deployAndCompute state
+                               (bname ++ show (nodeId node)) b node deps)
+                               nodes
+    -- update the scheduler state
+    return $ state { runningIds = catMaybes newIds ++ runningIds state }
+
+-- | Deploys code in one node and requests that it is computed
 deployAndCompute :: SchedulerState
                  -> String
                  -> BlockCode
                  -> NodeDef
                  -> SchedulerDependencyIds
                  -> SimM (Maybe ComponentId)
-deployAndCompute state@(SchedulerState appData ids) name block node deps = do
-  -- cidDyn <- sendMessageSync Nothing (codeDeployer deps) (toDyn (DeployBlock block node))
+deployAndCompute state name block node deps = do
+  -- Request that the block is deployed and obtain component id
   cidDyn <- invoke Nothing (codeDeployer deps) (toDyn (DeployBlock name block node))
   let compIdM = fromDynamic cidDyn
-  awhen compIdM $ -- sendMessageAsync Nothing compId (toDyn Compute)
-                  \compId -> invokeNoWait Nothing compId (toDyn Compute)
+
+  -- Send compute to the newly created component
+  maybe' compIdM (return ()) $ \compId ->
+    invokeNoWait Nothing compId (toDyn Compute)
+
   return compIdM
+
+maybe' :: Maybe a -> b -> (a -> b) -> b
+maybe' m d f = maybe d f m
