@@ -13,6 +13,7 @@ data RDState
     { aggregateStamp   :: [PropertyAttribute]
     , probabilityTable :: ProbabilityTable
     , sqmsInstance     :: ComponentId
+    , dhtEntryId       :: ComponentId
     , routingTable     :: RoutingTable
     , leafState        :: RDState
     }
@@ -46,6 +47,9 @@ data RDMsg
     }
   | FoundNodes
     { foundNodes :: [NodeId]
+    }
+  | NewState
+    { newState   :: RDState
     }
   deriving Typeable
 
