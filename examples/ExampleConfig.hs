@@ -2,113 +2,48 @@ module HeatMap where
 
 import Data.Maybe
 import qualified Data.IntMap as IM
-
+import qualified Data.Map    as Map
 import SoOSiM
-import MemoryManager.Types
-import Scheduler
+import SoOSiM.Simulator
+import SoOSiM.Types
+import UniqSupply
+import Unique
 
-import HeatMap.Types
-import HeatMap.Util
+main :: IO ()
+main = do
+    supply <- mkSplitUniqSupply 'z'
+    let (supply',supply'')       = splitUniqSupply supply
+    let (node0id:component0id:_) = uniqsFromSupply supply'
+    let component0CC             = CC Running Initializer (error "no parent") [Initialize]
+    let node0                    = Node node0id NodeInfo (Map.fromList [("Initializer",component0id)]) (IM.fromList [(getKey component0id,component0CC)]) IM.empty
+    let simState                 = SimState node0id component0id (IM.fromList [(getKey node0id,node0)]) supply'' (Map.fromList [("Initializer",component0CC)])
+    loop 0 simState
+    return ()
+  where
+    loop ::
+      Int
+      -> SimState
+      -> IO ()
+    loop n simState = do
+      putStrLn $ "Cycle: " ++ show n
+      simState' <- execStep simState
+      c <- getChar
+      case c of
+        'n' -> loop (n+1) simState'
+        _   -> return ()
 
+data Initializer = Initializer
 
-heatMap :: HMState -> ComponentInput -> SimM HMState
--- Initialization behaviour
-heatMap hmState Initialize = do
-  let (w,h) = arraySize hmState
+initializer ::
+  Initializer
+  -> ComponentInput
+  -> SimM Initializer
+initializer s Initialize =
+  error "make a configuration here"
 
-  -- Calculate read locations for worker threads
-  let rlocs = [ ( dimTrans w h x (0,0)
-                , filter (/= (-1)) [dimTrans w h x (0,-1), dimTrans w h x (0,1)]
-                , filter (/= (-1)) [dimTrans w h x (-1,0), dimTrans w h x (1,0)])
-              | x <- [0..(w*h)-1]
-              ]
+initializer s _ = yield s
 
-  -- Calculate write locations for worker threads
-  let wlocs = [ dimTrans w h x (0,0) + (w*h) | x <- [0..(w*h)-1]]
-
-  -- Instantiate worker threads
-  registerComponent (initState :: HMWorker)
-  workerIDs <- mapM (\(w,r) -> do
-                        workerID <- createComponentRequest "HeatMapWorker"
-                        invokeNoWait Nothing workerID (toDyn $ NewState (HMWorker w r (transfer hmState)))
-                        return workerID
-                    ) (zip wlocs rlocs)
-
-  -- Make the worker threads do actual work
-  let workers' = IM.fromList (zip (map getKey workerIDs) (repeat Compute))
-  mapM_ (\x -> invokeNoWait Nothing x (toDyn Compute)) workerIDs
-
-  return $ hmState {workers = workers'}
-
--- Keep track of finished workers
-heatMap hmState (ComponentMsg senderId content) | (Just Done) <- fromDynamic content = do
-  let workers' = IM.insert (getKey senderId) Done (workers hmState)
-  if (all (== Done) . IM.elems $ workers')
-    then do -- All workers are finished
-      let (w,h) = arraySize hmState
-
-      -- Calculate read and write locations
-      let rlocs = [ dimTrans w h x (0,0) + (w*h) | x <- [0..(w*h)-1]]
-      let wlocs = [ dimTrans w h x (0,0) | x <- [0..(w*h)-1]]
-
-      -- locate memory managers
-      memManagerId <- fmap fromJust $ componentLookup Nothing "MemoryManager"
-
-      -- Copy values from 1 array to the other
-      rVals <- mapM (\x -> invoke Nothing memManagerId (toDyn (Read x))) rlocs
-      _ <- mapM (\(x,v) -> invoke Nothing memManagerId (toDyn (Write x v))) (zip wlocs rVals)
-
-      -- Restart all workers to run next iteration
-      let workerIDs = map mkUniqueGrimily . IM.keys . workers $ hmState
-      mapM_ (\x -> invokeNoWait Nothing x (toDyn Compute)) workerIDs
-
-      return $ hmState { workers = IM.map (\_ -> Compute) (workers hmState) }
-    else do -- Still waiting for some workers
-      return $ hmState { workers = workers' }
-
-heatMap hmState _ = return hmState
-
-
-heatMapWorker hmwState (ComponentMsg _ content) | (Just (NewState s')) <- fromDynamic content = do
-  return s'
-
-heatMapWorker hmwState (ComponentMsg _ content) | (Just Compute) <- fromDynamic content = do
-  -- Extract configuration
-  let (c,vert,hor)   = rdLocs hmwState
-  let (dy2i,dx2i,dt) = wtransfer hmwState
-
-  -- Locate memory manager
-  memManagerId <- fmap fromJust $ componentLookup Nothing "MemoryManager"
-
-  -- Read array values
-  cVal    <- fmap (fromJust . fromDynamic)       $ invoke Nothing memManagerId (toDyn (Read c))
-  vertVal <- fmap (map (fromJust . fromDynamic)) $ mapM (\x -> invoke Nothing memManagerId (toDyn (Read x))) vert
-  horVal  <- fmap (map (fromJust . fromDynamic)) $ mapM (\x -> invoke Nothing memManagerId (toDyn (Read x))) vert
-
-  -- Calculate value
-  let newValV = sum ((length vert) * cVal:vertVal) * dy2i
-  let newValH = sum ((length hor) * cVal:horVal) * dx2i
-  let newVal = (newValV + newValH) * dt
-
-  -- Write array value
-  invokeNoWait Nothing memManagerId (toDyn (Write (wrLoc hmwState) (toDyn (c + newVal))))
-
-  -- Notify creator that we're finished
-  creator <- componentCreator
-  invokeNoWait Nothing creator (toDyn Done)
-
-  return hmwState
-
-heatMapWorker hmwState _ = return hmwState
-
-
--- ComponetIface instances
-instance ComponentIface HMState where
-  initState          = HMState IM.empty (0,0) (0,0,0)
-  componentName _    = "HeatMap"
-  componentBehaviour = heatMap
-
-instance ComponentIface HMWorker where
-  initState          = HMWorker 0 (0,[],[]) (0,0,0)
-  componentName _    = "HeatMapWorker"
-  componentBehaviour = heatMapWorker
+instance ComponentIface Initializer where
+  initState          = Initializer
+  componentName _    = "Initializer"
+  componentBehaviour = initializer
