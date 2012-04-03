@@ -1,4 +1,4 @@
-module HeatMap where
+module ExampleConfig where
 
 import Data.Maybe
 import qualified Data.IntMap as IM
