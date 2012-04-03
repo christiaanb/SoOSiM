@@ -5,11 +5,12 @@ import SoOSiM
 
 import MemoryManager.Types
 
-identifyAddress :: Dynamic -> Maybe Int
-identifyAddress d = case (fromDynamic d) of
-  Just (Write i _) -> Just i
-  Just (Read i)    -> Just i
-  Nothing          -> Nothing
-
-memCommand :: Dynamic -> MemCommand
-memCommand = fromJust . fromDynamic
+checkAddress ::
+  [MemorySource]
+  -> Int
+  -> MemorySource
+checkAddress sources addr = case (filter containsAddr sources) of
+    []    -> error "address unknown"
+    (x:_) -> x
+  where
+    containsAddr (MemorySource base sc _) = base <= addr && addr < sc

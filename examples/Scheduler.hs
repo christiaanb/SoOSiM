@@ -9,8 +9,8 @@ import Scheduler.Types
 scheduler schedState (ComponentMsg sender content) = do
   case (fromDynamic content) of
     (Just (cname :: String)) -> do
-        compId <- createComponent Nothing cname
-        sendMessageAsync Nothing sender (toDyn compId)
+        compId <- createComponent Nothing (Just sender) cname
+        invokeNoWait Nothing sender (toDyn compId)
         return schedState
     Nothing -> return schedState
 
@@ -21,7 +21,7 @@ createComponentRequest ::
   -> SimM ComponentId
 createComponentRequest s = do
   schedulerId    <- fmap fromJust $ componentLookup Nothing "Scheduler"
-  componentIdDyn <- sendMessageSync Nothing schedulerId (toDyn s)
+  componentIdDyn <- invoke Nothing schedulerId (toDyn s)
   return (fromJust $ fromDynamic componentIdDyn)
 
 instance ComponentIface SchedulerState where

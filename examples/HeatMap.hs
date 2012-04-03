@@ -30,40 +30,41 @@ heatMap hmState Initialize = do
   registerComponent (initState :: HMWorker)
   workerIDs <- mapM (\(w,r) -> do
                         workerID <- createComponentRequest "HeatMapWorker"
-                        sendMessageAsync Nothing workerID (toDyn $ NewState (HMWorker w r (transfer hmState)))
+                        invokeNoWait Nothing workerID (toDyn $ NewState (HMWorker w r (transfer hmState)))
                         return workerID
                     ) (zip wlocs rlocs)
 
   -- Make the worker threads do actual work
   let workers' = IM.fromList (zip (map getKey workerIDs) (repeat Compute))
-  mapM_ (\x -> sendMessageAsync Nothing x (toDyn Compute)) workerIDs
+  mapM_ (\x -> invokeNoWait Nothing x (toDyn Compute)) workerIDs
 
   return $ hmState {workers = workers'}
 
--- Behaviour when all worker threads are finished
-heatMap hmState Tick | all (== Done) . IM.elems . workers $ hmState = do
-  let (w,h) = arraySize hmState
-
-  -- Calculate read and write locations
-  let rlocs = [ dimTrans w h x (0,0) + (w*h) | x <- [0..(w*h)-1]]
-  let wlocs = [ dimTrans w h x (0,0) | x <- [0..(w*h)-1]]
-
-  -- locate memory managers
-  memManagerId <- fmap fromJust $ componentLookup Nothing "MemoryManager"
-
-  -- Copy values from 1 array to the other
-  rVals <- mapM (\x -> sendMessageSync Nothing memManagerId (toDyn (Read x))) rlocs
-  _ <- mapM (\(x,v) -> sendMessageSync Nothing memManagerId (toDyn (Write x v))) (zip wlocs rVals)
-
-  -- Restart all workers to run next iteration
-  let workerIDs = map mkUniqueGrimily . IM.keys . workers $ hmState
-  mapM_ (\x -> sendMessageAsync Nothing x (toDyn Compute)) workerIDs
-
-  return $ hmState { workers = IM.map (\_ -> Compute) (workers hmState) }
-
 -- Keep track of finished workers
 heatMap hmState (ComponentMsg senderId content) | (Just Done) <- fromDynamic content = do
-  return $ hmState { workers = IM.insert (getKey senderId) Done (workers hmState) }
+  let workers' = IM.insert (getKey senderId) Done (workers hmState)
+  if (all (== Done) . IM.elems $ workers')
+    then do -- All workers are finished
+      let (w,h) = arraySize hmState
+
+      -- Calculate read and write locations
+      let rlocs = [ dimTrans w h x (0,0) + (w*h) | x <- [0..(w*h)-1]]
+      let wlocs = [ dimTrans w h x (0,0) | x <- [0..(w*h)-1]]
+
+      -- locate memory managers
+      memManagerId <- fmap fromJust $ componentLookup Nothing "MemoryManager"
+
+      -- Copy values from 1 array to the other
+      rVals <- mapM (\x -> invoke Nothing memManagerId (toDyn (Read x))) rlocs
+      _ <- mapM (\(x,v) -> invoke Nothing memManagerId (toDyn (Write x v))) (zip wlocs rVals)
+
+      -- Restart all workers to run next iteration
+      let workerIDs = map mkUniqueGrimily . IM.keys . workers $ hmState
+      mapM_ (\x -> invokeNoWait Nothing x (toDyn Compute)) workerIDs
+
+      return $ hmState { workers = IM.map (\_ -> Compute) (workers hmState) }
+    else do -- Still waiting for some workers
+      return $ hmState { workers = workers' }
 
 heatMap hmState _ = return hmState
 
@@ -80,9 +81,9 @@ heatMapWorker hmwState (ComponentMsg _ content) | (Just Compute) <- fromDynamic 
   memManagerId <- fmap fromJust $ componentLookup Nothing "MemoryManager"
 
   -- Read array values
-  cVal    <- fmap (fromJust . fromDynamic)       $ sendMessageSync Nothing memManagerId (toDyn (Read c))
-  vertVal <- fmap (map (fromJust . fromDynamic)) $ mapM (\x -> sendMessageSync Nothing memManagerId (toDyn (Read x))) vert
-  horVal  <- fmap (map (fromJust . fromDynamic)) $ mapM (\x -> sendMessageSync Nothing memManagerId (toDyn (Read x))) vert
+  cVal    <- fmap (fromJust . fromDynamic)       $ invoke Nothing memManagerId (toDyn (Read c))
+  vertVal <- fmap (map (fromJust . fromDynamic)) $ mapM (\x -> invoke Nothing memManagerId (toDyn (Read x))) vert
+  horVal  <- fmap (map (fromJust . fromDynamic)) $ mapM (\x -> invoke Nothing memManagerId (toDyn (Read x))) vert
 
   -- Calculate value
   let newValV = sum ((length vert) * cVal:vertVal) * dy2i
@@ -90,11 +91,11 @@ heatMapWorker hmwState (ComponentMsg _ content) | (Just Compute) <- fromDynamic 
   let newVal = (newValV + newValH) * dt
 
   -- Write array value
-  sendMessageAsync Nothing memManagerId (toDyn (Write (wrLoc hmwState) (toDyn (c + newVal))))
+  invokeNoWait Nothing memManagerId (toDyn (Write (wrLoc hmwState) (toDyn (c + newVal))))
 
   -- Notify creator that we're finished
   creator <- componentCreator
-  sendMessageAsync Nothing creator (toDyn Done)
+  invokeNoWait Nothing creator (toDyn Done)
 
   return hmwState
 
