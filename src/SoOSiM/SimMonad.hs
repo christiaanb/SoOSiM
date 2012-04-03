@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module SoOSiM.SimMonad where
 
-import Control.Monad.Coroutine.SuspensionFunctors
+import Control.Monad.Coroutine
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.IntMap as IntMap
@@ -51,10 +51,10 @@ invoke ::
   -> Dynamic        -- ^ Argument
   -> SimM Dynamic   -- ^ Response from recipient
 invoke senderMaybe recipient content = SimM $ do
-  nId <- lift $ gets currentNode
+  nId <- lift $ componentNode recipient
   mId <- lift $ gets currentComponent
   lift $ modifyNode nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
-  request recipient
+  suspend (Request recipient return)
 
 -- | Invoke another component, don't wait for a response
 invokeNoWait ::
@@ -62,7 +62,18 @@ invokeNoWait ::
   -> ComponentId    -- ^ Callee
   -> Dynamic        -- ^ Argument
   -> SimM ()        -- ^ Call returns immediately
-invokeNoWait = error "invokeNoWait"
+invokeNoWait senderMaybe recipient content = SimM $ do
+  nId <- lift $ componentNode recipient
+  mId <- lift $ gets currentComponent
+  lift $ modifyNode nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
+  return ()
+
+-- | Yield to the simulator scheduler
+yield ::
+  ComponentIface s
+  => s
+  -> SimM s
+yield s = SimM $ suspend (Yield (return s))
 
 -- | Get the component id of your component
 getComponentId ::
@@ -77,7 +88,11 @@ getNodeId = SimM $ lift $ gets currentNode
 -- | Create a new node
 createNode ::
   SimM NodeId -- ^ NodeId of the created node
-createNode = error "createNode"
+createNode = SimM $ do
+  nodeId <- lift getUniqueM
+  let newNode = Node nodeId NodeInfo Map.empty IntMap.empty IntMap.empty
+  lift $ modify (\s -> s {nodes = IntMap.insert (getKey nodeId) newNode (nodes s)})
+  return nodeId
 
 -- | Write memory of local node
 writeMemory ::

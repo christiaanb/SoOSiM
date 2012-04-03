@@ -9,7 +9,8 @@ import Scheduler.Types
 scheduler schedState (ComponentMsg sender content) = do
   case (fromDynamic content) of
     (Just (cname :: String)) -> do
-        compId <- createComponent Nothing (Just sender) cname
+        nodeId <- createNode
+        compId <- createComponent (Just nodeId) (Just sender) cname
         invokeNoWait Nothing sender (toDyn compId)
         return schedState
     Nothing -> return schedState

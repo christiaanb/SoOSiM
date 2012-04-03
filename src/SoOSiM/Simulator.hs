@@ -2,16 +2,16 @@
 {-# LANGUAGE PatternGuards   #-}
 module SoOSiM.Simulator
   ( modifyNode
+  , componentNode
   , updateMsgBuffer
   , execStep
   )
 where
 
 import Control.Monad.Coroutine
-import Control.Monad.Coroutine.SuspensionFunctors
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
-import Data.IntMap
+import Data.IntMap as IM
 import qualified Data.Traversable as T
 import Unique
 
@@ -24,6 +24,15 @@ modifyNode ::
 modifyNode i f = do
   ns <- gets nodes
   modify (\s -> s {nodes = adjust f (getKey i) ns})
+
+componentNode ::
+  ComponentId
+  -> SimMonad NodeId
+componentNode cId = do
+  let key = getKey cId
+  ns <- gets nodes
+  let [Node nId _ _ _ _] = elems $ IM.filter (\n -> IM.member key (nodeComponents n)) ns
+  return nId
 
 updateMsgBuffer ::
   ComponentId       -- ^ Recipient component ID
@@ -48,9 +57,14 @@ handleComponent (CC (WaitingForMsg waitingFor f) cstate pId buffer) (ComponentMs
     res <- resume $ runSimM (f content)
     case res of
       -- Computation is finished, return to idle state
-      Right a            -> return (CC Idle a pId buffer, Nothing)
+      Right a                     -> return (CC Running a pId buffer, Nothing)
       -- Computation is waiting for a message, store the resumable computation
       Left (Request o c) -> return (CC (WaitingForMsg o (SimM . c)) cstate pId buffer, Nothing)
+      Left (Yield c)     -> do
+        res' <- resume c
+        case res' of
+          Right a -> return (CC Idle a pId buffer, Nothing)
+          Left  _ -> error "yield did not return state!"
 
 -- Don't change the execution context if we're not getting the message we're waiting for
 handleComponent ce@(CC (WaitingForMsg _ _) _ _ _) msg
@@ -61,9 +75,14 @@ handleComponent (CC _ cstate pId buffer) msg = do
   res <- resume $ runSimM (componentBehaviour cstate msg)
   case res of
     -- Computation is finished, return to idle state
-    Right a            -> return (CC Idle a pId buffer, Nothing)
+    Right a            -> return (CC Running a pId buffer, Nothing)
     -- Computation is waiting for a message, store the resumable computation
     Left (Request o c) -> return (CC (WaitingForMsg o (SimM . c)) cstate pId buffer, Nothing)
+    Left (Yield c)     -> do
+        res' <- resume c
+        case res' of
+          Right a -> return (CC Idle a pId buffer, Nothing)
+          Left  _ -> error "yield did not return state!"
 
 executeNode ::
   Node
@@ -76,6 +95,17 @@ executeNode n@(Node nId _ _ components _) = do
 executeComponent ::
   ComponentContext
   -> SimMonad ComponentContext
+executeComponent (CC Running cstate pId []) = do
+  res <- resume $ runSimM (componentBehaviour cstate Tick)
+  case res of
+    Right a            -> return (CC Running a pId [])
+    Left (Request o c) -> return (CC (WaitingForMsg o (SimM . c)) cstate pId [])
+    Left (Yield c)     -> do
+        res' <- resume c
+        case res' of
+          Right a -> return (CC Idle a pId [])
+          Left  _ -> error "yield did not return state!"
+
 executeComponent ce = do
   (ce',buffer') <- mapUntilNothingM handleComponent ce (msgBuffer ce)
   return (ce' {msgBuffer = buffer'})
