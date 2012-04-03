@@ -8,7 +8,7 @@
 module SoOSiM.Types where
 
 import Control.Monad.Coroutine
-import Control.Monad.Coroutine.SuspensionFunctors
+--import Control.Monad.Coroutine.SuspensionFunctors
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.Dynamic
@@ -88,8 +88,16 @@ data Node =
 -- message from. The execute a resumeable computation you simply do:
 --   'resume <comp>'
 --
-newtype SimM a = SimM { runSimM :: Coroutine (Request Unique Dynamic) SimMonad a }
-  deriving (Monad, Functor)
+newtype SimM a = SimM { runSimM :: Coroutine (RequestOrYield Unique Dynamic) SimMonad a }
+  deriving (Functor, Monad)
+
+data RequestOrYield request response x
+  = Request request (response -> x)
+  | Yield   x
+
+instance Functor (RequestOrYield x f) where
+  fmap f (Request x g) = Request x (f . g)
+  fmap f (Yield y)     = Yield (f y)
 
 -- | The internal monad of the simulator is currently a simple state-monad wrapping IO
 type SimMonad  = StateT SimState IO
