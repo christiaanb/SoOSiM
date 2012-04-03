@@ -28,7 +28,7 @@ Library
                     transformers     >= 0.2.2.0 && < 2.3,
                     mtl              >= 2.0.1.0 && < 2.1,
                     monad-coroutine  >= 0.7.1   && < 0.8,
-                    ghc              >= 7.0.4   && < 7.5
+                    ghc              >= 7.0.3   && < 7.5
 
   Other-modules:    SoOSiM.SimMonad,
                     SoOSiM.Simulator,
