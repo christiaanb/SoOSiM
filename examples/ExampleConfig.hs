@@ -40,6 +40,7 @@ initializer ::
   -> SimM Initializer
 initializer s Initialize =
   error "make a configuration here"
+  yield s
 
 initializer s _ = yield s
 
