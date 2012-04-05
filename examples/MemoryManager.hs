@@ -9,7 +9,7 @@ import MemoryManager.Util
 memoryManager :: MemState -> ComponentInput -> SimM MemState
 memoryManager s (ComponentMsg senderId msgContent)
   | Just (Register addr sc src) <- fromDynamic msgContent
-  = return $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
+  = yield $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
 
   | Just (Read addr) <- fromDynamic msgContent
   = do
@@ -18,11 +18,11 @@ memoryManager s (ComponentMsg senderId msgContent)
       Nothing -> do
         addrVal <- readMemory Nothing addr
         invokeNoWait Nothing senderId addrVal
-        return s
+        yield s
       Just remote -> do
         response <- invoke Nothing remote msgContent
         invokeNoWait Nothing senderId response
-        return s
+        yield s
 
   | Just (Write addr val) <- fromDynamic msgContent
   = do
@@ -30,10 +30,10 @@ memoryManager s (ComponentMsg senderId msgContent)
     case (sourceId src) of
       Nothing -> do
         addrVal <- writeMemory Nothing addr val
-        return s
+        yield s
       Just remote -> do
         invokeNoWait Nothing remote msgContent
-        return s
+        yield s
 
 memoryManager s _ = return s
 

@@ -10,12 +10,12 @@ data HMMsg = NewState HMWorker | Compute | Done
 data HMState = HMState
   { workers   :: IntMap HMMsg
   , arraySize :: (Int,Int)
-  , transfer  :: (Int,Int,Int)
+  , transfer  :: (Float,Float,Float)
   }
 
 data HMWorker = HMWorker
   { wrLoc     :: Int
   , rdLocs    :: (Int,[Int],[Int])
-  , wtransfer :: (Int,Int,Int)
+  , wtransfer :: (Float,Float,Float)
   }
   deriving (Eq, Typeable)

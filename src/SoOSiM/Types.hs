@@ -7,8 +7,8 @@
 {-# LANGUAGE TypeSynonymInstances       #-}
 module SoOSiM.Types where
 
+import Control.Concurrent.STM
 import Control.Monad.Coroutine
---import Control.Monad.Coroutine.SuspensionFunctors
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.Dynamic
@@ -37,10 +37,11 @@ class ComponentIface s where
 -- of several component contexts, each having their own type representing
 -- their internal state.
 data ComponentContext = forall s . ComponentIface s =>
-  CC { currentStatus      :: ComponentStatus s  -- ^ Status of the component
-     , componentState     :: s                  -- ^ State internal to the component
-     , creator            :: ComponentId        -- ^ 'ComponentId' of the component that created this component
-     , msgBuffer          :: [ComponentInput]   -- ^ Message waiting to be processed by the component
+  CC { componentId        :: ComponentId
+     , currentStatus      :: TVar (ComponentStatus s) -- ^ Status of the component
+     , componentState     :: TVar s                   -- ^ State internal to the component
+     , creator            :: ComponentId              -- ^ 'ComponentId' of the component that created this component
+     , msgBuffer          :: TVar [ComponentInput]    -- ^ Message waiting to be processed by the component
      }
 
 -- | Status of a running component
@@ -49,13 +50,13 @@ data ComponentStatus a
   | WaitingForMsg ComponentId (Dynamic -> SimM a) -- ^ Component is waiting for a message from 'ComponentId', will continue with computation ('Dynamic' -> 'SimM' a) once received
   | Running                                       -- ^ Component is busy doing computations
 
-
 -- | Events send to components by the simulator
 data ComponentInput = ComponentMsg ComponentId Dynamic -- ^ A message send another component: the field argument is the 'ComponentId' of the sender, the second field the message content
                     | NodeMsg NodeId Dynamic           -- ^ A message send by a node: the first field is the 'NodeId' of the sending node, the second field the message content
                     | Initialize                       -- ^ Event send when a component is first created
                     | Deinitialize                     -- ^ Event send when a component is about to be removed
                     | Tick                             -- ^ Event send every simulation round
+  deriving Show
 
 type NodeId   = Unique
 -- | Meta-data describing the functionaly of the computing node, currently just a singleton type.
@@ -69,6 +70,7 @@ data Node =
        , nodeComponentLookup :: Map ComponentName ComponentId -- ^ Lookup table of OS components running on the node, key: the 'ComponentName', value: unique 'ComponentId'
        , nodeComponents      :: IntMap ComponentContext       -- ^ Map of component contexts, key is the 'ComponentId'
        , nodeMemory          :: IntMap Dynamic                -- ^ Node-local memory
+       , nodeTrace           :: [String]
        }
 
 -- The simulator monad used by the OS components offers resumable computations
@@ -108,8 +110,15 @@ data SimState =
            , currentNode      :: NodeId       -- ^ The 'NodeId' of the node containing the component currently under evaluation
            , nodes            :: IntMap Node  -- ^ The set of nodes comprising the entire system
            , uniqueSupply     :: UniqSupply   -- ^ Unlimited supply of unique values
-           , componentMap     :: Map String ComponentContext
+           , componentMap     :: Map String StateContainer
            }
+
+data StateContainer = forall s . ComponentIface s => SC s
 
 instance MonadUnique SimMonad where
   getUniqueSupplyM = gets uniqueSupply
+  getUniqueM       = do
+    supply <- gets uniqueSupply
+    let (unique,supply') = takeUniqFromSupply supply
+    modify (\s -> s {uniqueSupply = supply'})
+    return unique
