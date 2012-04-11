@@ -11,8 +11,9 @@ import UniqSupply
 import Unique
 import Text.PrettyPrint.HughesPJ
 
-import HeatMap.Application
-import HeatMap.Types
+--import HeatMap.Application
+--import HeatMap.Types
+import Fibbo
 
 import MemoryManager
 import MemoryManager.Types
@@ -53,9 +54,9 @@ initializer ::
 initializer s Initialize = do
   nId <- getNodeId
   registerComponent (initState :: MemState)
-  registerComponent (initState :: HMState)
+  registerComponent (initState :: FS)
   _ <- createComponent (Just nId) Nothing "MemoryManager"
-  _ <- createComponent (Just nId) Nothing "HeatMap"
+  _ <- createComponent (Just nId) Nothing "Fibbo5"
   yield s
 
 initializer s _ = yield s
