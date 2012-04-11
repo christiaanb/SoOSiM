@@ -148,10 +148,14 @@ componentLookup nodeId_maybe cName = SimM $ do
   nsLookup  <- fmap (nodeComponentLookup . (IntMap.! nId)) $ lift $ gets nodes
   return $ Map.lookup cName nsLookup
 
+runIO ::
+  IO a
+  -> SimM a
+runIO = SimM . liftIO
+
 traceMsg ::
   String
   -> SimM ()
 traceMsg msg = SimM $ do
   curNodeId <- lift $ gets currentNode
   lift $ modifyNode curNodeId (\node -> node {nodeTrace = msg:(nodeTrace node)})
-
