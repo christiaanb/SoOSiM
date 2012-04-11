@@ -9,7 +9,7 @@ import Expr.Combinators
 -- import Expr.SimpleSemantics
 import Expr.SoOSSemantics
 
-fibbo = app fix $ lam $ \fib ->
+fibbo = fix $ \fib ->
   lam $ \n ->
     newvar 0 $ \n1 ->
     newvar 0 $ \n2 ->

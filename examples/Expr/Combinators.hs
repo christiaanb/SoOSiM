@@ -15,8 +15,9 @@ x >: y     = letS x (\_ -> y)
 
 infixr 5 >:
 
-fix = lam $ \f ->
-        newvar (lam $ \r -> undefined) $ \r ->
-          update r (lam $ \x -> f $$ (deref r) $$ x) >:
-          deref r
+fix' = lam $ \f ->
+         newvar (lam $ \r -> undefined) $ \r ->
+           update r (lam $ \x -> f $$ (deref r) $$ x) >:
+           deref r
 
+fix f = app fix' (lam f)
