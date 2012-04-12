@@ -42,7 +42,18 @@ data ComponentContext = forall s . ComponentIface s =>
      , componentState     :: TVar s                   -- ^ State internal to the component
      , creator            :: ComponentId              -- ^ 'ComponentId' of the component that created this component
      , msgBuffer          :: TVar [ComponentInput]    -- ^ Message waiting to be processed by the component
+     , traceMsgs          :: [String]                 -- ^ Trace message buffer
+     , simMetaData        :: TVar SimMetaData         -- ^ Statistical information regarding a component
      }
+
+data SimMetaData
+  = SimMetaData
+  { cyclesRunning :: Int
+  , cyclesWaiting :: Int
+  , cyclesIdling  :: Int
+  , msgsReceived  :: IntMap Int -- ^ Key: senderId; Value: number of messages
+  , msgsSend      :: IntMap Int -- ^ Key: receiverId: Value: number of messages
+  }
 
 -- | Status of a running component
 data ComponentStatus a
@@ -70,7 +81,6 @@ data Node =
        , nodeComponentLookup :: Map ComponentName ComponentId -- ^ Lookup table of OS components running on the node, key: the 'ComponentName', value: unique 'ComponentId'
        , nodeComponents      :: IntMap ComponentContext       -- ^ Map of component contexts, key is the 'ComponentId'
        , nodeMemory          :: IntMap Dynamic                -- ^ Node-local memory
-       , nodeTrace           :: [String]
        }
 
 -- The simulator monad used by the OS components offers resumable computations

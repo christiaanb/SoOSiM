@@ -42,7 +42,10 @@ createComponent nodeId_maybe parentId_maybe cname = SimM $ do
     statusTV      <- (lift . lift) $ newTVarIO Idle
     bufferTV      <- (lift . lift) $ newTVarIO [Initialize]
 
-    lift $ modifyNode nId (addComponent cId (CC cId statusTV cstateTV parentId bufferTV))
+    let emptyMeta = SimMetaData 0 0 0 IntMap.empty IntMap.empty
+    emptyMetaTV   <- (lift . lift) $ newTVarIO emptyMeta
+
+    lift $ modifyNode nId (addComponent cId (CC cId statusTV cstateTV parentId bufferTV [] emptyMetaTV))
     return cId
   where
     addComponent cId cc n@(Node {..}) =
@@ -95,7 +98,7 @@ createNode ::
   SimM NodeId -- ^ NodeId of the created node
 createNode = SimM $ do
   nodeId <- lift getUniqueM
-  let newNode = Node nodeId NodeInfo Map.empty IntMap.empty IntMap.empty []
+  let newNode = Node nodeId NodeInfo Map.empty IntMap.empty IntMap.empty
   lift $ modify (\s -> s {nodes = IntMap.insert (getKey nodeId) newNode (nodes s)})
   return nodeId
 
@@ -158,4 +161,5 @@ traceMsg ::
   -> SimM ()
 traceMsg msg = SimM $ do
   curNodeId <- lift $ gets currentNode
-  lift $ modifyNode curNodeId (\node -> node {nodeTrace = msg:(nodeTrace node)})
+  curCompId <- lift $ gets currentComponent
+  lift $ modifyNode curNodeId (updateTraceBuffer curCompId msg)

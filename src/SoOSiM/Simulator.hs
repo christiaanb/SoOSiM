@@ -6,6 +6,7 @@ module SoOSiM.Simulator
   , modifyNodeM
   , componentNode
   , updateMsgBuffer
+  , updateTraceBuffer
   , execStep
   )
 where
@@ -53,6 +54,17 @@ updateMsgBuffer recipient msg node = do
     let ce = (nodeComponents node) IM.! (getKey recipient)
     lift $ atomically $ modifyTVar (msgBuffer ce) (\msgs -> msgs ++ [msg])
 
+updateTraceBuffer ::
+  ComponentId
+  -> String
+  -> Node
+  -> Node
+updateTraceBuffer componentId msg node =
+    node { nodeComponents = f (nodeComponents node)}
+  where
+    f ccs = IM.adjust g (getKey componentId) ccs
+    g cc  = cc { traceMsgs = msg:(traceMsgs cc)}
+
 -- | Update component context according to simulator event
 handleComponent ::
   ComponentIface s   -- ^ Current component context
@@ -99,7 +111,7 @@ handleComponent _ cstate msg = do
 executeComponent ::
   ComponentContext
   -> SimMonad ()
-executeComponent (CC cId statusTvar cstateTvar _ bufferTvar) = do
+executeComponent (CC cId statusTvar cstateTvar _ bufferTvar _ mDataTV) = do
   modify $ (\s -> s {currentComponent = cId})
   status <- lift $ readTVarIO statusTvar
   cstate <- lift $ readTVarIO cstateTvar
@@ -119,6 +131,22 @@ executeComponent (CC cId statusTvar cstateTvar _ bufferTvar) = do
   lift $ atomically $ writeTVar statusTvar status'
   lift $ atomically $ writeTVar cstateTvar cstate'
   lift $ atomically $ writeTVar bufferTvar buffer'
+  lift $ atomically $ modifyCycleCount status buffer mDataTV
+
+modifyCycleCount ::
+  ComponentStatus s
+  -> [ComponentInput]
+  -> TVar SimMetaData
+  -> STM ()
+modifyCycleCount st bf tv =
+  case st of
+    Idle ->
+      if Prelude.null bf
+        then modifyTVar tv (\mdata -> mdata {cyclesIdling  = cyclesIdling  mdata + 1})
+        else modifyTVar tv (\mdata -> mdata {cyclesRunning = cyclesRunning  mdata + 1})
+
+    Running           -> modifyTVar tv (\mdata -> mdata {cyclesRunning = cyclesRunning mdata + 1})
+    WaitingForMsg _ _ -> modifyTVar tv (\mdata -> mdata {cyclesWaiting = cyclesWaiting mdata + 1})
 
 mapUntilNothingM ::
   ComponentIface s
