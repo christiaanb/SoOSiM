@@ -42,7 +42,7 @@ createComponent nodeId_maybe parentId_maybe cname = SimM $ do
     statusTV      <- (lift . lift) $ newTVarIO Idle
     bufferTV      <- (lift . lift) $ newTVarIO [Initialize]
 
-    let emptyMeta = SimMetaData 0 0 0 IntMap.empty IntMap.empty
+    let emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
     emptyMetaTV   <- (lift . lift) $ newTVarIO emptyMeta
 
     lift $ modifyNode nId (addComponent cId (CC cId statusTV cstateTV parentId bufferTV [] emptyMetaTV))
@@ -62,7 +62,10 @@ invoke ::
 invoke senderMaybe recipient content = SimM $ do
   nId <- lift $ componentNode recipient
   mId <- lift $ gets currentComponent
-  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
+  let senderId = fromMaybe mId senderMaybe
+  senderNodeId <- lift $ componentNode senderId
+  lift $ modifyNodeM senderNodeId (incrSendCounter recipient senderId)
+  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg senderId content))
   suspend (Request recipient return)
 
 -- | Invoke another component, don't wait for a response
@@ -74,7 +77,10 @@ invokeNoWait ::
 invokeNoWait senderMaybe recipient content = SimM $ do
   nId <- lift $ componentNode recipient
   mId <- lift $ gets currentComponent
-  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
+  let senderId = fromMaybe mId senderMaybe
+  senderNodeId <- lift $ componentNode senderId
+  lift $ modifyNodeM senderNodeId (incrSendCounter recipient senderId)
+  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg senderId content))
 
 -- | Yield to the simulator scheduler
 yield ::

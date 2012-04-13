@@ -51,8 +51,8 @@ data SimMetaData
   { cyclesRunning :: Int
   , cyclesWaiting :: Int
   , cyclesIdling  :: Int
-  , msgsReceived  :: IntMap Int -- ^ Key: senderId; Value: number of messages
-  , msgsSend      :: IntMap Int -- ^ Key: receiverId: Value: number of messages
+  , msgsReceived  :: Map ComponentId Int -- ^ Key: senderId; Value: number of messages
+  , msgsSend      :: Map ComponentId Int -- ^ Key: receiverId: Value: number of messages
   }
 
 -- | Status of a running component
