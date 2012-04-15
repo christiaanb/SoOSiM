@@ -13,6 +13,7 @@ import Text.PrettyPrint.HughesPJ
 
 import HeatMap.Application
 import HeatMap.Types
+--import Fibbo
 
 import MemoryManager
 import MemoryManager.Types
@@ -25,8 +26,10 @@ main = do
     statusTV <- newTVarIO Running
     stateTV  <- newTVarIO Initializer
     bufferTV <- newTVarIO [Initialize]
-    let component0CC             = CC component0id statusTV stateTV component0id bufferTV
-    let node0                    = Node node0id NodeInfo Map.empty (IM.fromList [(getKey component0id,component0CC)]) IM.empty []
+    let emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
+    emptyMetaTV   <- newTVarIO emptyMeta
+    let component0CC             = CC component0id statusTV stateTV component0id bufferTV [] emptyMetaTV
+    let node0                    = Node node0id NodeInfo Map.empty (IM.fromList [(getKey component0id,component0CC)]) IM.empty
     let simState                 = SimState node0id component0id (IM.fromList [(getKey node0id,node0)]) supply'' Map.empty
     loop 0 simState
     return ()
@@ -79,24 +82,38 @@ instance ShowIO a => ShowIO [a] where
 
 
 instance ShowIO Node where
-  showIO (Node nId _ _ components mem traceMsgs) = do
+  showIO (Node nId _ _ components mem) = do
     componentsDoc <- showIO (IM.elems components)
-    let traceMsgsDoc = foldl ($$) empty $ map text traceMsgs
-    let retval = text "Node" <+> text (show nId) $+$ (nest 2 (text "components: " <+> componentsDoc)) $+$ (nest 2 (text "valid mem addrs: " <+> text (show $ IM.keys mem))) $+$ (nest 2 (text "traceMsgs: " <+> traceMsgsDoc))
+    let retval = text "Node" <+> text (show nId) $+$ (nest 2 (text "components" <> colon <+> componentsDoc)) $+$ (nest 2 (text "valid mem addrs" <> colon <+> text (show $ IM.keys mem)))
     return retval
 
 instance ShowIO ComponentContext where
-  showIO (CC cId statusTV stateTV _ bufferTV) = do
+  showIO (CC cId statusTV stateTV _ bufferTV traceMsgs mdataTV) = do
     status  <- (readTVarIO statusTV) >>= showIO
     state   <- readTVarIO stateTV
     buffer  <- (readTVarIO bufferTV) >>= showIO
-    let retval = text (componentName state) <+> parens (text "id:" <+> text (show cId)) <> colon <+> status $+$ (nest 2 (text "Pending events" <> colon <+> brackets (buffer)))
+    mdata   <- (readTVarIO mdataTV) >>= showIO
+    let traceMsgsDoc = foldl ($$) empty $ map text traceMsgs
+    let retval = text (componentName state) <+> parens (text "id" <> colon <+> text (show cId)) <> colon <+> status $+$ (nest 2 (text "Pending events" <> colon <+> brackets (buffer))) $+$ (nest 2 (text "traceMsgs" <> colon <+> traceMsgsDoc)) $+$ (nest 2 mdata)
+    return retval
+
+instance ShowIO SimMetaData where
+  showIO (SimMetaData running waiting idling received send) = do
+    let receivedDoc = foldl ($+$) empty $ map (\(k,e) -> text (show k) <> colon <+> text (show e))  (Map.toList received)
+    let sendDoc = foldl ($+$) empty $ map (\(k,e) -> text (show k) <> colon <+> text (show e))  (Map.toList send)
+
+    let retval = text "cycles running" <> colon <+> text (show running) $+$
+                 text "cycles waiting" <> colon <+> text (show waiting) $+$
+                 text "cycles idling"  <> colon <+> text (show idling)  $+$
+                 text "total cycles"  <> colon <+> text (show $ running + waiting + idling) $+$
+                 text "Received Msgs" <> colon <+> receivedDoc $+$
+                 text "Send Msgs" <> colon <+> sendDoc
     return retval
 
 instance ShowIO (ComponentStatus s) where
   showIO Idle                  = return $ text "Idle"
   showIO Running               = return $ text "Running"
-  showIO (WaitingForMsg cId _) = return $ text "Waiting for:" <+> text (show cId)
+  showIO (WaitingForMsg cId _) = return $ text "Waiting for" <> colon <+> text (show cId)
 
 instance ShowIO ComponentInput where
   showIO = return . text . show

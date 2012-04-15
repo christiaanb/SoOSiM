@@ -4,8 +4,10 @@
 module SoOSiM.Simulator
   ( modifyNode
   , modifyNodeM
+  , incrSendCounter
   , componentNode
   , updateMsgBuffer
+  , updateTraceBuffer
   , execStep
   )
 where
@@ -15,6 +17,7 @@ import Control.Monad.Coroutine
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.IntMap as IM
+import Data.Map    as Map
 import qualified Data.Traversable as T
 import Unique
 
@@ -41,7 +44,7 @@ componentNode ::
 componentNode cId = do
   let key = getKey cId
   ns <- gets nodes
-  let (node:_) = elems $ IM.filter (\n -> IM.member key (nodeComponents n)) ns
+  let (node:_) = IM.elems $ IM.filter (\n -> IM.member key (nodeComponents n)) ns
   return (nodeId node)
 
 updateMsgBuffer ::
@@ -49,22 +52,49 @@ updateMsgBuffer ::
   -> ComponentInput -- ^ Actual message
   -> Node           -- ^ Node containing the component
   -> SimMonad ()
-updateMsgBuffer recipient msg node = do
-    let ce = (nodeComponents node) IM.! (getKey recipient)
+updateMsgBuffer recipientId msg@(ComponentMsg senderId _) node = do
+    let ce = (nodeComponents node) IM.! (getKey recipientId)
     lift $ atomically $ modifyTVar (msgBuffer ce) (\msgs -> msgs ++ [msg])
+    lift $ atomically $ modifyTVar (simMetaData ce) (\mData -> mData {msgsReceived = Map.insertWith (+) senderId 1 (msgsReceived mData)})
+
+updateMsgBuffer recipientId msg node = do
+    let ce = (nodeComponents node) IM.! (getKey recipientId)
+    lift $ atomically $ modifyTVar (msgBuffer ce) (\msgs -> msgs ++ [msg])
+
+incrSendCounter ::
+  ComponentId    -- RecipientID
+  -> ComponentId -- SenderId
+  -> Node        -- Node containing the sender
+  -> SimMonad ()
+incrSendCounter recipientId senderId node = do
+  let ce = (nodeComponents node) IM.! (getKey senderId)
+  lift $ atomically $ modifyTVar (simMetaData ce) (\mData -> mData {msgsSend = Map.insertWith (+) recipientId 1 (msgsSend mData)})
+
+updateTraceBuffer ::
+  ComponentId
+  -> String
+  -> Node
+  -> Node
+updateTraceBuffer componentId msg node =
+    node { nodeComponents = f (nodeComponents node)}
+  where
+    f ccs = IM.adjust g (getKey componentId) ccs
+    g cc  = cc { traceMsgs = msg:(traceMsgs cc)}
 
 -- | Update component context according to simulator event
 handleComponent ::
   ComponentIface s   -- ^ Current component context
-  => ComponentStatus s
+  => TVar SimMetaData
+  -> ComponentStatus s
   -> s
   -> ComponentInput  -- ^ Simulator event
   -> SimMonad (ComponentStatus s, s, Maybe ComponentInput) -- ^ Returns tuple of: ((potentially updated) component context, 'Nothing' when event is consumed; 'Just' 'ComponentInput' otherwise)
 
 -- If a component receives the message from the sender it was waiting for
-handleComponent (WaitingForMsg waitingFor f) cstate (ComponentMsg sender content)
+handleComponent mDataTV (WaitingForMsg waitingFor f) cstate (ComponentMsg sender content)
   | waitingFor == sender
   = do
+    incrRunningCount mDataTV
     -- Run the resumable computation with the message content
     res <- resume $ runSimM (f content)
     case res of
@@ -79,11 +109,12 @@ handleComponent (WaitingForMsg waitingFor f) cstate (ComponentMsg sender content
           Left  _ -> error "yield did not return state!"
 
 -- Don't change the execution context if we're not getting the message we're waiting for
-handleComponent st@(WaitingForMsg _ _) s msg
-  = return (st, s, Just msg)
+handleComponent mDataTV st@(WaitingForMsg _ _) s msg
+  = incrWaitingCount mDataTV >> return (st, s, Just msg)
 
 -- Not in an waiting state, just handle the message
-handleComponent _ cstate msg = do
+handleComponent mDataTV _ cstate msg = do
+  incrRunningCount mDataTV
   res <- resume $ runSimM (componentBehaviour cstate msg)
   case res of
     -- Computation is finished, return to idle state
@@ -99,13 +130,15 @@ handleComponent _ cstate msg = do
 executeComponent ::
   ComponentContext
   -> SimMonad ()
-executeComponent (CC cId statusTvar cstateTvar _ bufferTvar) = do
+executeComponent (CC cId statusTvar cstateTvar _ bufferTvar _ mDataTV) = do
   modify $ (\s -> s {currentComponent = cId})
   status <- lift $ readTVarIO statusTvar
   cstate <- lift $ readTVarIO cstateTvar
   buffer <- lift $ readTVarIO bufferTvar
+
   (status',cstate',buffer') <- case (status,buffer) of
         (Running, []) -> do
+          incrRunningCount mDataTV
           res <- resume $ runSimM (componentBehaviour cstate Tick)
           case res of
             Right a            -> return (Running, a, [])
@@ -115,10 +148,26 @@ executeComponent (CC cId statusTvar cstateTvar _ bufferTvar) = do
                 case res' of
                   Right a -> return (Idle, a, [])
                   Left  _ -> error "yield did not return state!"
-        _ -> mapUntilNothingM handleComponent status cstate buffer
+        (Idle, [])
+          -> do
+            incrIdleCount mDataTV
+            return (status,cstate,buffer)
+        (WaitingForMsg _ _, [])
+          -> do
+            incrWaitingCount mDataTV
+            return (status,cstate,buffer)
+        _ -> mapUntilNothingM (handleComponent mDataTV) status cstate buffer
+
   lift $ atomically $ writeTVar statusTvar status'
   lift $ atomically $ writeTVar cstateTvar cstate'
   lift $ atomically $ writeTVar bufferTvar buffer'
+
+incrIdleCount, incrWaitingCount, incrRunningCount ::
+  TVar SimMetaData
+  -> SimMonad ()
+incrIdleCount    tv = lift $ atomically $ modifyTVar tv (\mdata -> mdata {cyclesIdling  = cyclesIdling  mdata + 1})
+incrWaitingCount tv = lift $ atomically $ modifyTVar tv (\mdata -> mdata {cyclesWaiting = cyclesWaiting mdata + 1})
+incrRunningCount tv = lift $ atomically $ modifyTVar tv (\mdata -> mdata {cyclesRunning = cyclesRunning mdata + 1})
 
 mapUntilNothingM ::
   ComponentIface s

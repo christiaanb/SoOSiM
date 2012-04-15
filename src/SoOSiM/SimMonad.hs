@@ -42,7 +42,10 @@ createComponent nodeId_maybe parentId_maybe cname = SimM $ do
     statusTV      <- (lift . lift) $ newTVarIO Idle
     bufferTV      <- (lift . lift) $ newTVarIO [Initialize]
 
-    lift $ modifyNode nId (addComponent cId (CC cId statusTV cstateTV parentId bufferTV))
+    let emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
+    emptyMetaTV   <- (lift . lift) $ newTVarIO emptyMeta
+
+    lift $ modifyNode nId (addComponent cId (CC cId statusTV cstateTV parentId bufferTV [] emptyMetaTV))
     return cId
   where
     addComponent cId cc n@(Node {..}) =
@@ -59,7 +62,10 @@ invoke ::
 invoke senderMaybe recipient content = SimM $ do
   nId <- lift $ componentNode recipient
   mId <- lift $ gets currentComponent
-  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
+  let senderId = fromMaybe mId senderMaybe
+  senderNodeId <- lift $ componentNode senderId
+  lift $ modifyNodeM senderNodeId (incrSendCounter recipient senderId)
+  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg senderId content))
   suspend (Request recipient return)
 
 -- | Invoke another component, don't wait for a response
@@ -71,7 +77,10 @@ invokeNoWait ::
 invokeNoWait senderMaybe recipient content = SimM $ do
   nId <- lift $ componentNode recipient
   mId <- lift $ gets currentComponent
-  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg (fromMaybe mId senderMaybe) content))
+  let senderId = fromMaybe mId senderMaybe
+  senderNodeId <- lift $ componentNode senderId
+  lift $ modifyNodeM senderNodeId (incrSendCounter recipient senderId)
+  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg senderId content))
 
 -- | Yield to the simulator scheduler
 yield ::
@@ -95,7 +104,7 @@ createNode ::
   SimM NodeId -- ^ NodeId of the created node
 createNode = SimM $ do
   nodeId <- lift getUniqueM
-  let newNode = Node nodeId NodeInfo Map.empty IntMap.empty IntMap.empty []
+  let newNode = Node nodeId NodeInfo Map.empty IntMap.empty IntMap.empty
   lift $ modify (\s -> s {nodes = IntMap.insert (getKey nodeId) newNode (nodes s)})
   return nodeId
 
@@ -148,10 +157,15 @@ componentLookup nodeId_maybe cName = SimM $ do
   nsLookup  <- fmap (nodeComponentLookup . (IntMap.! nId)) $ lift $ gets nodes
   return $ Map.lookup cName nsLookup
 
+runIO ::
+  IO a
+  -> SimM a
+runIO = SimM . liftIO
+
 traceMsg ::
   String
   -> SimM ()
 traceMsg msg = SimM $ do
   curNodeId <- lift $ gets currentNode
-  lift $ modifyNode curNodeId (\node -> node {nodeTrace = msg:(nodeTrace node)})
-
+  curCompId <- lift $ gets currentComponent
+  lift $ modifyNode curNodeId (updateTraceBuffer curCompId msg)
