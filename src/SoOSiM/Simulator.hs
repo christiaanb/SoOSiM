@@ -83,11 +83,11 @@ updateTraceBuffer componentId msg node =
 
 -- | Update component context according to simulator event
 handleComponent ::
-  ComponentIface s   -- ^ Current component context
+  ComponentIface s
   => TVar SimMetaData
-  -> ComponentStatus s
+  -> ComponentStatus s -- ^ Current component context
   -> s
-  -> ComponentInput  -- ^ Simulator event
+  -> ComponentInput    -- ^ Simulator event
   -> SimMonad (ComponentStatus s, s, Maybe ComponentInput) -- ^ Returns tuple of: ((potentially updated) component context, 'Nothing' when event is consumed; 'Just' 'ComponentInput' otherwise)
 
 -- If a component receives the message from the sender it was waiting for

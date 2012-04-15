@@ -5,9 +5,9 @@ import qualified Data.IntMap as IM
 
 import SoOSiM
 import MemoryManager.Types
-import Scheduler
+import Scheduler.Types
 
-import HeatMap.Types
+import HeatMap.Types as HeatMap
 import HeatMap.Util
 
 heatMapApplication :: HMState -> ComponentInput -> SimM HMState
@@ -35,15 +35,11 @@ heatMapApplication hmState Initialize = do
 
   -- Instantiate worker threads
   registerComponent (initState :: HMWorker)
+  schedulerId <- fmap fromJust $ componentLookup Nothing "Scheduler"
   workerIDs <- mapM (\(wloc,rloc) -> do
-                        nId <- createNode
-
-                        mId <- createComponent (Just nId) Nothing "MemoryManager"
-                        invokeNoWait Nothing mId (toDyn (Register 0 (2 * w * h) (Just memManagerId)))
-
-                        workerID <- createComponent (Just nId) Nothing "HeatMapWorker"
-                        invokeNoWait Nothing workerID (toDyn $ NewState (HMWorker wloc rloc (transfer hmState)))
-
+                        workerIDdyn <- invoke Nothing schedulerId (toDyn $ Execute "HeatMapWorker" [Register 0 (2 * w * h) (Just memManagerId)])
+                        let workerID = fromJust $ fromDynamic workerIDdyn
+                        invokeNoWait Nothing workerID (toDyn $ HeatMap.NewState (HMWorker wloc rloc (transfer hmState)))
                         return workerID
                     ) (zip wlocs rlocs)
 
@@ -84,7 +80,7 @@ heatMapApplication hmState (ComponentMsg senderId content) | (Just Done) <- from
 heatMapApplication hmState _ = return hmState
 
 
-heatMapWorker hmwState (ComponentMsg _ content) | (Just (NewState s')) <- fromDynamic content = do
+heatMapWorker hmwState (ComponentMsg _ content) | (Just (HeatMap.NewState s')) <- fromDynamic content = do
   yield s'
 
 heatMapWorker hmwState (ComponentMsg _ content) | (Just Compute) <- fromDynamic content = do

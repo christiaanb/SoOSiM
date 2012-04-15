@@ -18,6 +18,9 @@ import HeatMap.Types
 import MemoryManager
 import MemoryManager.Types
 
+import Scheduler
+import Scheduler.Types
+
 main :: IO ()
 main = do
     supply <- mkSplitUniqSupply 'z'
@@ -57,7 +60,9 @@ initializer s Initialize = do
   nId <- getNodeId
   registerComponent (initState :: MemState)
   registerComponent (initState :: HMState)
+  registerComponent (initState :: SchedulerState)
   _ <- createComponent (Just nId) Nothing "MemoryManager"
+  _ <- createComponent (Just nId) Nothing "Scheduler"
   _ <- createComponent (Just nId) Nothing "HeatMap"
   yield s
 

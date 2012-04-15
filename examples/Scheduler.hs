@@ -8,8 +8,10 @@ import Scheduler.Types
 
 scheduler schedState (ComponentMsg sender content) = do
   case (fromDynamic content) of
-    (Just (cname :: String)) -> do
+    Just (Execute cname memCommands) -> do
         nodeId <- createNode
+        memCompId <- createComponent (Just nodeId) Nothing "MemoryManager"
+        mapM_ (invokeNoWait Nothing memCompId . toDyn) memCommands
         compId <- createComponent (Just nodeId) (Just sender) cname
         invokeNoWait Nothing sender (toDyn compId)
         return schedState
@@ -26,6 +28,6 @@ createComponentRequest s = do
   return (fromJust $ fromDynamic componentIdDyn)
 
 instance ComponentIface SchedulerState where
-  initState          = SchedulerState
+  initState          = SchedulerState [] []
   componentName _    = "Scheduler"
   componentBehaviour = scheduler
