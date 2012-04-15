@@ -129,6 +129,7 @@ instance MonadUnique SimMonad where
   getUniqueSupplyM = gets uniqueSupply
   getUniqueM       = do
     supply <- gets uniqueSupply
-    let (unique,supply') = takeUniqFromSupply supply
+    let (supply'',supply') = splitUniqSupply supply
+        unique             = uniqFromSupply supply''
     modify (\s -> s {uniqueSupply = supply'})
     return unique
