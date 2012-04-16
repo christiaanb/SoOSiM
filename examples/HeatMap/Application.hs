@@ -12,7 +12,7 @@ import HeatMap.Util
 
 heatMapApplication :: HMState -> ComponentInput -> SimM HMState
 -- Initialization behaviour
-heatMapApplication hmState Initialize = do
+heatMapApplication hmState (ComponentMsg senderId content) | (Just Compute) <- fromDynamic content = do
   let (w,h) = arraySize hmState
 
   -- Calculate read locations for worker threads

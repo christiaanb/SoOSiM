@@ -81,6 +81,7 @@ data Node =
        , nodeComponentLookup :: Map ComponentName ComponentId -- ^ Lookup table of OS components running on the node, key: the 'ComponentName', value: unique 'ComponentId'
        , nodeComponents      :: IntMap ComponentContext       -- ^ Map of component contexts, key is the 'ComponentId'
        , nodeMemory          :: IntMap Dynamic                -- ^ Node-local memory
+       , nodeComponentOrder  :: [ComponentId]
        }
 
 -- The simulator monad used by the OS components offers resumable computations

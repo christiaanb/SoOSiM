@@ -9,6 +9,7 @@ module SoOSiM.Simulator
   , updateMsgBuffer
   , updateTraceBuffer
   , execStep
+  , execStepSmall
   )
 where
 
@@ -189,9 +190,25 @@ executeNode ::
   Node
   -> SimMonad ()
 executeNode node = do
-  modify $ (\s -> s {currentNode = nodeId node})
-  _ <- T.mapM executeComponent (nodeComponents node)
-  return ()
+    modify $ (\s -> s {currentNode = nodeId node})
+    _ <- T.mapM executeComponent (nodeComponents node)
+    return ()
+
+executeNodeSmall ::
+  Node
+  -> SimMonad ()
+executeNodeSmall node = do
+    modify $ (\s -> s {currentNode = nodeId node})
+    --_ <- T.mapM executeComponent (nodeComponents node)
+    --return ()
+    case (nodeComponentOrder node) of
+      [] -> return ()
+      (c:_) -> do
+          executeComponent ((nodeComponents node) IM.! (getKey c))
+          modifyNode (nodeId node) (\n -> n {nodeComponentOrder = rotate (nodeComponentOrder n)})
+  where
+    rotate []     = []
+    rotate (x:xs) = xs ++ [x]
 
 tick :: SimMonad ()
 tick = do
@@ -199,5 +216,15 @@ tick = do
   _ <- T.mapM executeNode ns
   return ()
 
+tickSmall :: SimMonad ()
+tickSmall = do
+  ns <- gets nodes
+  _ <- T.mapM executeNodeSmall ns
+  return ()
+
 execStep :: SimState -> IO SimState
 execStep = execStateT tick
+
+execStepSmall :: SimState -> IO SimState
+execStepSmall = execStateT tickSmall
+

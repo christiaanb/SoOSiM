@@ -51,6 +51,7 @@ createComponent nodeId_maybe parentId_maybe cname = SimM $ do
     addComponent cId cc n@(Node {..}) =
       n { nodeComponents      = IntMap.insert (getKey cId) cc nodeComponents
         , nodeComponentLookup = Map.insert cname cId nodeComponentLookup
+        , nodeComponentOrder  = nodeComponentOrder ++ [cId]
         }
 
 -- | Synchronously invoke another component
@@ -104,7 +105,7 @@ createNode ::
   SimM NodeId -- ^ NodeId of the created node
 createNode = SimM $ do
   nodeId <- lift getUniqueM
-  let newNode = Node nodeId NodeInfo Map.empty IntMap.empty IntMap.empty
+  let newNode = Node nodeId NodeInfo Map.empty IntMap.empty IntMap.empty []
   lift $ modify (\s -> s {nodes = IntMap.insert (getKey nodeId) newNode (nodes s)})
   return nodeId
 

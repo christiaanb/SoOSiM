@@ -32,7 +32,7 @@ main = do
     let emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
     emptyMetaTV   <- newTVarIO emptyMeta
     let component0CC             = CC component0id statusTV stateTV component0id bufferTV [] emptyMetaTV
-    let node0                    = Node node0id NodeInfo Map.empty (IM.fromList [(getKey component0id,component0CC)]) IM.empty
+    let node0                    = Node node0id NodeInfo Map.empty (IM.fromList [(getKey component0id,component0CC)]) IM.empty [component0id]
     let simState                 = SimState node0id component0id (IM.fromList [(getKey node0id,node0)]) supply'' Map.empty
     loop 0 simState
     return ()
@@ -63,7 +63,8 @@ initializer s Initialize = do
   registerComponent (initState :: SchedulerState)
   _ <- createComponent (Just nId) Nothing "MemoryManager"
   _ <- createComponent (Just nId) Nothing "Scheduler"
-  _ <- createComponent (Just nId) Nothing "HeatMap"
+  hmId <- createComponent (Just nId) Nothing "HeatMap"
+  invokeNoWait Nothing hmId (toDyn Compute)
   yield s
 
 initializer s _ = yield s
@@ -87,9 +88,9 @@ instance ShowIO a => ShowIO [a] where
 
 
 instance ShowIO Node where
-  showIO (Node nId _ _ components mem) = do
+  showIO (Node nId _ _ components mem order) = do
     componentsDoc <- showIO (IM.elems components)
-    let retval = text "Node" <+> text (show nId) $+$ (nest 2 (text "components" <> colon <+> componentsDoc)) $+$ (nest 2 (text "valid mem addrs" <> colon <+> text (show $ IM.keys mem)))
+    let retval = text "Node" <+> text (show nId) $+$ (nest 2 (text "components" <> colon <+> componentsDoc)) $+$ (nest 2 (text "valid mem addrs" <> colon <+> text (show $ IM.keys mem))) $+$ (nest 2 (text "order: " <> colon <+> text (show order)))
     return retval
 
 instance ShowIO ComponentContext where
