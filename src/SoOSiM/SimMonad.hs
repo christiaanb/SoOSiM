@@ -40,7 +40,7 @@ createComponent nodeId_maybe parentId_maybe cname = SimM $ do
     cstateTV      <- (lift . lift) $ newTVarIO cstate
 
     statusTV      <- (lift . lift) $ newTVarIO Idle
-    bufferTV      <- (lift . lift) $ newTVarIO [Initialize]
+    bufferTV      <- (lift . lift) $ newTVarIO []
 
     let emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
     emptyMetaTV   <- (lift . lift) $ newTVarIO emptyMeta
