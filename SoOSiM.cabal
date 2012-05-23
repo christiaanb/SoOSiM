@@ -1,20 +1,29 @@
 Name:                SoOSiM
 Version:             0.1
 Synopsis:            Abstract full system simulator
--- Description:
+
+Description:
+  SoOSiM is a simulator developed for the purpose of exploring operating
+  system concepts and operating system modules. The simulator provides a
+  highly abstracted view of a computing system, consisting of computing
+  nodes, and components that are concurrently executed on these nodes.
+  OS modules are subsequently modelled as components that progress as a
+  result of reacting to two types of events: messages from other components,
+  or a system-wide tick event. Using this abstract view, a developer can
+  quickly formalize assertions regarding the interaction between operating
+  system modules and applications.
+
 Homepage:            http://www.soos-project.eu/
 License:             BSD3
 License-file:        LICENSE
 Author:              S(o)OS Consortium
-Maintainer:          christiaan.baaij@gmail.com
--- Copyright:
-Category:            Hardware
+Maintainer:          Christiaan Baaij <christiaan.baaij@gmail.com>
+Copyright:           (c) 2012, S(o)OS Consortium
+Category:            Simulation
 Build-type:          Simple
-
--- Extra-source-files:
+Stability:           alpha
 
 Cabal-version:       >=1.2
-
 
 Library
   HS-Source-Dirs:   src
@@ -36,5 +45,6 @@ Library
   Other-modules:    SoOSiM.SimMonad,
                     SoOSiM.Util
 
-  -- Build-tools:
-
+source-repository head
+  type:     git
+  location: git://github.com/christiaanb/SoOSiM.git
