@@ -1,9 +1,8 @@
-{-# LANGUAGE Rank2Types                 #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 module SoOSiM.Types where
 

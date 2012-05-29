@@ -1,6 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE PatternGuards   #-}
-{-# LANGUAGE Rank2Types      #-}
 module SoOSiM.Simulator
   ( modifyNode
   , modifyNodeM
