@@ -1,5 +1,6 @@
 module ExampleConfig where
 
+import Control.Concurrent.Supply
 import Control.Concurrent.STM
 import Data.Maybe
 import qualified Data.IntMap as IM
@@ -7,8 +8,6 @@ import qualified Data.Map    as Map
 import SoOSiM
 import SoOSiM.Simulator
 import SoOSiM.Types
-import UniqSupply
-import Unique
 import Text.PrettyPrint.HughesPJ
 
 import HeatMap.Application
@@ -23,17 +22,17 @@ import Scheduler.Types
 
 main :: IO ()
 main = do
-    supply <- mkSplitUniqSupply 'z'
-    let (supply',supply'')       = splitUniqSupply supply
-    let (node0id:component0id:_) = uniqsFromSupply supply'
+    supply <- newSupply
+    let (node0id,supply')       = freshId supply
+    let (component0id,supply'') = freshId supply'
     statusTV <- newTVarIO Running
     stateTV  <- newTVarIO Initializer
     bufferTV <- newTVarIO [Initialize]
     let emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
     emptyMetaTV   <- newTVarIO emptyMeta
     let component0CC             = CC component0id statusTV stateTV component0id bufferTV [] emptyMetaTV
-    let node0                    = Node node0id NodeInfo Map.empty (IM.fromList [(getKey component0id,component0CC)]) IM.empty [component0id]
-    let simState                 = SimState node0id component0id (IM.fromList [(getKey node0id,node0)]) supply'' Map.empty
+    let node0                    = Node node0id NodeInfo Map.empty (IM.fromList [(component0id,component0CC)]) IM.empty [component0id]
+    let simState                 = SimState node0id component0id (IM.fromList [(node0id,node0)]) supply'' Map.empty
     loop 0 simState
     return ()
   where
@@ -64,7 +63,7 @@ initializer s Initialize = do
   _ <- createComponent (Just nId) Nothing "MemoryManager"
   _ <- createComponent (Just nId) Nothing "Scheduler"
   hmId <- createComponent (Just nId) Nothing "HeatMap"
-  invokeNoWait Nothing hmId (toDyn Compute)
+  invokeAsync Nothing hmId (marshall Compute) ignore
   yield s
 
 initializer s _ = yield s

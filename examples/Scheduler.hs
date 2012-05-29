@@ -7,13 +7,13 @@ import SoOSiM
 import Scheduler.Types
 
 scheduler schedState (ComponentMsg sender content) = do
-  case (fromDynamic content) of
+  case (safeUnmarshall content) of
     Just (Execute cname memCommands) -> do
         nodeId <- createNode
         memCompId <- createComponent (Just nodeId) Nothing "MemoryManager"
-        mapM_ (invokeNoWait Nothing memCompId . toDyn) memCommands
+        mapM_ ((\c -> invokeAsync Nothing memCompId c ignore) . marshall) memCommands
         compId <- createComponent (Just nodeId) (Just sender) cname
-        invokeNoWait Nothing sender (toDyn compId)
+        respond Nothing sender (marshall compId)
         return schedState
     Nothing -> return schedState
 
@@ -24,8 +24,8 @@ createComponentRequest ::
   -> SimM ComponentId
 createComponentRequest s = do
   schedulerId    <- fmap fromJust $ componentLookup Nothing "Scheduler"
-  componentIdDyn <- invoke Nothing schedulerId (toDyn s)
-  return (fromJust $ fromDynamic componentIdDyn)
+  componentId    <- fmap unmarshall $ invoke Nothing schedulerId (marshall s)
+  return componentId
 
 instance ComponentIface SchedulerState where
   initState          = SchedulerState [] []

@@ -1,4 +1,5 @@
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveDataTypeable        #-}
+{-# LANGUAGE ExistentialQuantification #-}
 module MemoryManager.Types where
 
 import SoOSiM
@@ -19,5 +20,5 @@ data MemState =
 
 data MemCommand = Register Int Int (Maybe ComponentId)
                 | Read     Int
-                | Write    Int Dynamic
+                | forall a . Typeable a => Write Int a
   deriving Typeable

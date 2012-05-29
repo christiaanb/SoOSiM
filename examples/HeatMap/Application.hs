@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module HeatMap.Application where
 
 import Data.Maybe
@@ -12,7 +13,7 @@ import HeatMap.Util
 
 heatMapApplication :: HMState -> ComponentInput -> SimM HMState
 -- Initialization behaviour
-heatMapApplication hmState (ComponentMsg senderId content) | (Just Compute) <- fromDynamic content = do
+heatMapApplication hmState (ComponentMsg senderId content) | (Just Compute) <- safeUnmarshall content = do
   let (w,h) = arraySize hmState
 
   -- Calculate read locations for worker threads
@@ -27,31 +28,48 @@ heatMapApplication hmState (ComponentMsg senderId content) | (Just Compute) <- f
 
   -- zero-out memory
   memManagerId <- fmap fromJust $ componentLookup Nothing "MemoryManager"
-  invokeNoWait Nothing memManagerId (toDyn (Register 0 (2 * w * h) Nothing))
-  mapM_ (\wloc -> invokeNoWait Nothing memManagerId (toDyn (Write wloc (toDyn (0::Float))))) [0..(2*w*h-1)]
+  invokeAsync Nothing memManagerId
+    (marshall (Register 0 (2 * w * h) Nothing))
+    ignore
+  mapM_ (\wloc -> invokeAsync Nothing memManagerId
+                    (marshall (Write wloc (0::Float)))
+                    ignore
+        ) [0..(2*w*h-1)]
 
   -- Set every 3rd location to 1
-  mapM_ (\wloc -> invokeNoWait Nothing memManagerId (toDyn (Write wloc (toDyn (1::Float))))) [ x | x <- [0..(2*w*h-1)], x `mod` 4 == 0]
+  mapM_ (\wloc -> invokeAsync Nothing memManagerId
+                    (marshall (Write wloc (1::Float)))
+                    ignore
+        ) [ x | x <- [0..(2*w*h-1)], x `mod` 4 == 0]
 
   -- Instantiate worker threads
   registerComponent (initState :: HMWorker)
   schedulerId <- fmap fromJust $ componentLookup Nothing "Scheduler"
   workerIDs <- mapM (\(wloc,rloc) -> do
-                        workerIDdyn <- invoke Nothing schedulerId (toDyn $ Execute "HeatMapWorker" [Register 0 (2 * w * h) (Just memManagerId)])
-                        let workerID = fromJust $ fromDynamic workerIDdyn
-                        invokeNoWait Nothing workerID (toDyn $ HeatMap.NewState (HMWorker wloc rloc (transfer hmState)))
+                        workerID <- fmap unmarshall
+                                  $ invoke Nothing schedulerId
+                                      (marshall $
+                                        Execute "HeatMapWorker"
+                                          [Register 0 (2 * w * h)
+                                            (Just memManagerId)
+                                          ]
+                                      )
+                        invokeAsync Nothing workerID
+                          (marshall $ HeatMap.NewState
+                            (HMWorker wloc rloc (transfer hmState)))
+                          ignore
                         return workerID
                     ) (zip wlocs rlocs)
 
   -- Make the worker threads do actual work
-  let workers' = IM.fromList (zip (map getKey workerIDs) (repeat Compute))
-  mapM_ (\x -> invokeNoWait Nothing x (toDyn Compute)) workerIDs
+  let workers' = IM.fromList (zip workerIDs (repeat Compute))
+  mapM_ (\x -> invokeAsync Nothing x (marshall Compute) ignore) workerIDs
 
   yield $ hmState {workers = workers'}
 
 -- Keep track of finished workers
-heatMapApplication hmState (ComponentMsg senderId content) | (Just Done) <- fromDynamic content = do
-  let workers' = IM.insert (getKey senderId) Done (workers hmState)
+heatMapApplication hmState (ComponentMsg senderId content) | (Just Done) <- safeUnmarshall content = do
+  let workers' = IM.insert senderId Done (workers hmState)
   if (all (== Done) . IM.elems $ workers')
     then do -- All workers are finished
       let (w,h) = arraySize hmState
@@ -64,14 +82,24 @@ heatMapApplication hmState (ComponentMsg senderId content) | (Just Done) <- from
       memManagerId <- fmap fromJust $ componentLookup Nothing "MemoryManager"
 
       -- Copy values from 1 array to the other
-      rVals <- mapM (\x -> invoke Nothing memManagerId (toDyn (Read x))) rlocs
-      _ <- mapM (\(x,v) -> invokeNoWait Nothing memManagerId (toDyn (Write x v))) (zip wlocs rVals)
+      (rVals :: [Float]) <- mapM (\x -> fmap unmarshall
+                                      $ invoke Nothing memManagerId
+                                          (marshall (Read x))
+                                 ) rlocs
+      _ <- mapM (\(x,v) -> invokeAsync Nothing memManagerId
+                              (marshall (Write x v))
+                              ignore
+                )
+                (zip wlocs rVals)
 
-      traceMsg (show (map fromDynamic rVals :: [Maybe Float]))
+      traceMsg (show rVals)
 
       -- Restart all workers to run next iteration
-      let workerIDs = map mkUniqueGrimily . IM.keys . workers $ hmState
-      mapM_ (\x -> invokeNoWait Nothing x (toDyn Compute)) workerIDs
+      let workerIDs = IM.keys . workers $ hmState
+      mapM_ (\x -> invokeAsync Nothing x
+                     (marshall Compute)
+                     ignore
+            ) workerIDs
 
       yield $ hmState { workers = IM.map (\_ -> Compute) (workers hmState) }
     else do -- Still waiting for some workers
@@ -80,10 +108,10 @@ heatMapApplication hmState (ComponentMsg senderId content) | (Just Done) <- from
 heatMapApplication hmState _ = return hmState
 
 
-heatMapWorker hmwState (ComponentMsg _ content) | (Just (HeatMap.NewState s')) <- fromDynamic content = do
+heatMapWorker hmwState (ComponentMsg _ content) | (Just (HeatMap.NewState s')) <- safeUnmarshall content = do
   yield s'
 
-heatMapWorker hmwState (ComponentMsg _ content) | (Just Compute) <- fromDynamic content = do
+heatMapWorker hmwState (ComponentMsg _ content) | (Just Compute) <- safeUnmarshall content = do
   -- Extract configuration
   let (c,vert,hor)   = rdLocs hmwState
   let (dy2i,dx2i,dt) = wtransfer hmwState
@@ -92,9 +120,9 @@ heatMapWorker hmwState (ComponentMsg _ content) | (Just Compute) <- fromDynamic 
   memManagerId <- fmap fromJust $ componentLookup Nothing "MemoryManager"
 
   -- Read array values
-  cVal    <- fmap (fromJust . fromDynamic)       $ invoke Nothing memManagerId (toDyn (Read c))
-  vertVal <- fmap (map (fromJust . fromDynamic)) $ mapM (\x -> invoke Nothing memManagerId (toDyn (Read x))) vert
-  horVal  <- fmap (map (fromJust . fromDynamic)) $ mapM (\x -> invoke Nothing memManagerId (toDyn (Read x))) hor
+  cVal    <- fmap unmarshall $ invoke Nothing memManagerId (marshall (Read c))
+  vertVal <- fmap (map unmarshall) $ mapM (\x -> invoke Nothing memManagerId (marshall (Read x))) vert
+  horVal  <- fmap (map unmarshall) $ mapM (\x -> invoke Nothing memManagerId (marshall (Read x))) hor
 
   -- Calculate value
   let newValV = sum ((fromIntegral $ length vert) * cVal:vertVal) * dy2i
@@ -102,11 +130,13 @@ heatMapWorker hmwState (ComponentMsg _ content) | (Just Compute) <- fromDynamic 
   let newVal = (newValV + newValH) * dt
 
   -- Write array value
-  invokeNoWait Nothing memManagerId (toDyn (Write (wrLoc hmwState) (toDyn newVal)))
+  invokeAsync Nothing memManagerId
+    (marshall (Write (wrLoc hmwState) newVal))
+    ignore
 
   -- Notify creator that we're finished
   creator <- componentCreator
-  invokeNoWait Nothing creator (toDyn Done)
+  respond Nothing creator (marshall Done)
 
   yield hmwState
 

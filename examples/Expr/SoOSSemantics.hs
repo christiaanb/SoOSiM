@@ -73,8 +73,12 @@ instance EDSL (S SState) where
                   lift $ traceMsg ("Creating reference: " ++ show i)
                   a <- unS x
                   memManagerId <- fmap fromJust $ lift $ componentLookup Nothing "MemoryManager"
-                  lift $ invokeNoWait Nothing memManagerId (toDyn (Register i (i+1) Nothing))
-                  lift $ invokeNoWait Nothing memManagerId (toDyn (Write i (toDyn ())))
+                  lift $ invokeAsync Nothing memManagerId
+                           (marshall (Register i (i+1) Nothing))
+                           ignore
+                  lift $ invokeAsync Nothing memManagerId
+                           (marshall (Write i ()))
+                           ignore
                   lift $ runIO (newIORef (i,a))
 
   deref x      = S $ do
@@ -82,7 +86,8 @@ instance EDSL (S SState) where
                   (i,a') <- lift $ runIO (readIORef a)
                   memManagerId <- fmap fromJust $ lift $ componentLookup Nothing "MemoryManager"
                   lift $ traceMsg ("Dereferencing: " ++ show i)
-                  () <- fmap (fromJust . fromDynamic) $ lift $ invoke Nothing memManagerId (toDyn (Read i))
+                  () <- fmap unmarshall $ lift $ invoke Nothing memManagerId
+                                                   (marshall (Read i))
                   return a'
 
   update x y   = S $ do
@@ -92,6 +97,8 @@ instance EDSL (S SState) where
                   lift $ traceMsg ("Updating: " ++ show i)
                   lift $ runIO (modifyIORef a (\(i,_) -> (i,b)))
                   memManagerId <- fmap fromJust $ lift $ componentLookup Nothing "MemoryManager"
-                  lift $ invokeNoWait Nothing memManagerId (toDyn (Write i (toDyn ())))
+                  lift $ invokeAsync Nothing memManagerId
+                           (marshall (Write i ()))
+                           ignore
 
 runExpr = runStateT . unS
