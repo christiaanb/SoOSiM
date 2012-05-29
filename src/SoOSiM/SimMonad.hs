@@ -67,13 +67,28 @@ invoke senderMaybe recipient content = SimM $ do
   lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg senderId content))
   suspend (Request recipient return)
 
--- | Invoke another component, don't wait for a response
-invokeNoWait ::
+-- | Invoke another component, handle response asynchronously
+invokeAsync ::
+  Maybe ComponentId       -- ^ Caller, leave 'Nothing' to set to current module
+  -> ComponentId          -- ^ Callee
+  -> Dynamic              -- ^ Argument
+  -> (Dynamic -> SimM ()) -- ^ Handler
+  -> SimM ()              -- ^ Call returns immediately
+invokeAsync senderMaybe recipient content _ = SimM $ do
+  nId <- lift $ componentNode recipient
+  mId <- lift $ gets currentComponent
+  let senderId = fromMaybe mId senderMaybe
+  senderNodeId <- lift $ componentNode senderId
+  lift $ modifyNodeM senderNodeId (incrSendCounter recipient senderId)
+  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg senderId content))
+
+-- | Respond to another component
+respond ::
   Maybe ComponentId -- ^ Caller, leave 'Nothing' to set to current module
   -> ComponentId    -- ^ Callee
   -> Dynamic        -- ^ Argument
   -> SimM ()        -- ^ Call returns immediately
-invokeNoWait senderMaybe recipient content = SimM $ do
+respond senderMaybe recipient content = SimM $ do
   nId <- lift $ componentNode recipient
   mId <- lift $ gets currentComponent
   let senderId = fromMaybe mId senderMaybe
@@ -109,16 +124,17 @@ createNode = SimM $ do
 
 -- | Write memory of local node
 writeMemory ::
-  Maybe NodeId -- ^ Node you want to write on, leave 'Nothing' to set to current node
+  Typeable a
+  => Maybe NodeId -- ^ Node you want to write on, leave 'Nothing' to set to current node
   -> Int       -- ^ Address to write
-  -> Dynamic   -- ^ Value to write
+  -> a         -- ^ Value to write
   -> SimM ()
 writeMemory nodeId_maybe i val = SimM $ do
     curNodeId <- lift $ gets currentNode
     let nodeId = fromMaybe curNodeId nodeId_maybe
     lift $ modifyNode nodeId writeVal
   where
-    writeVal n@(Node {..}) = n { nodeMemory = IntMap.insert i val nodeMemory }
+    writeVal n@(Node {..}) = n { nodeMemory = IntMap.insert i (toDyn val) nodeMemory }
 
 -- | Read memory of local node
 readMemory ::
