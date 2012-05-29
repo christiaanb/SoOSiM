@@ -32,7 +32,7 @@ class ComponentIface s where
 
 -- | Context of a running component in the simulator.
 --
--- We need rank-2 types because we need to make a single collection
+-- We need existential types because we need to make a single collection
 -- of several component contexts, each having their own type representing
 -- their internal state.
 data ComponentContext = forall s . ComponentIface s =>
@@ -83,9 +83,9 @@ data Node =
        , nodeComponentOrder  :: [ComponentId]
        }
 
--- The simulator monad used by the OS components offers resumable computations
--- in the form of coroutines. These resumable computations expect a value of
--- type 'Dynamic', and return a value of type 'a'.
+-- | The simulator monad used by the OS components offers resumable
+-- computations in the form of coroutines. These resumable computations
+-- expect a value of type 'Dynamic', and return a value of type 'a'.
 --
 -- We need resumable computations to simulate synchronous messaging between
 -- two components. When a component synchronously sends a message to another
