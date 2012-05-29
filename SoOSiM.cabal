@@ -1,5 +1,5 @@
 Name:                SoOSiM
-Version:             0.1
+Version:             0.1.0.1
 Synopsis:            Abstract full system simulator
 
 Description:
@@ -23,7 +23,7 @@ Category:            Simulation
 Build-type:          Simple
 Stability:           alpha
 
-Cabal-version:       >=1.2
+Cabal-version:       >=1.6
 
 Library
   HS-Source-Dirs:   src
@@ -32,15 +32,15 @@ Library
                     SoOSiM.Simulator,
                     SoOSiM.Types
 
-  ghc-options:      -Wall
+  ghc-options:      -O2 -Wall
 
-  Build-depends:    base             >= 4.3.1.0 && < 4.6,
-                    containers       >= 0.4.0.0 && < 0.5,
-                    transformers     >= 0.2.2.0 && < 2.3,
-                    mtl              >= 2.0.1.0 && < 2.1,
-                    monad-coroutine  >= 0.7.1   && < 0.8,
-                    ghc              >= 7.0.3   && < 7.5,
-                    stm              >= 2.3     && < 2.4
+  Build-depends:    base              >= 4.3.1.0 && < 4.6,
+                    concurrent-supply >= 0.1.1   && < 0.2,
+                    containers        >= 0.4.0.0 && < 0.5,
+                    monad-coroutine   >= 0.7.1   && < 0.8,
+                    mtl               >= 2.0.1.0 && < 2.1,
+                    stm               >= 2.3     && < 2.4,
+                    transformers      >= 0.2.2.0 && < 2.3
 
   Other-modules:    SoOSiM.SimMonad,
                     SoOSiM.Util

@@ -8,6 +8,9 @@ import Data.Dynamic
 import Data.IntMap
 import Data.Monoid
 
+class MonadUnique m where
+  getUniqueM :: m Int
+
 adjustForce :: Monoid a => (a -> a) -> Key -> IntMap a -> IntMap a
 adjustForce f k m = case (member k m) of
   True  -> adjust f k m

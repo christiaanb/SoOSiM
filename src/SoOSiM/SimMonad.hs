@@ -12,8 +12,6 @@ import Data.Maybe
 import SoOSiM.Simulator
 import SoOSiM.Types
 import SoOSiM.Util
-import Unique
-import UniqSupply
 
 -- | Register a component interface with the simulator
 registerComponent ::
@@ -49,7 +47,7 @@ createComponent nodeId_maybe parentId_maybe cname = SimM $ do
     return cId
   where
     addComponent cId cc n@(Node {..}) =
-      n { nodeComponents      = IntMap.insert (getKey cId) cc nodeComponents
+      n { nodeComponents      = IntMap.insert cId cc nodeComponents
         , nodeComponentLookup = Map.insert cname cId nodeComponentLookup
         , nodeComponentOrder  = nodeComponentOrder ++ [cId]
         }
@@ -106,7 +104,7 @@ createNode ::
 createNode = SimM $ do
   nodeId <- lift getUniqueM
   let newNode = Node nodeId NodeInfo Map.empty IntMap.empty IntMap.empty []
-  lift $ modify (\s -> s {nodes = IntMap.insert (getKey nodeId) newNode (nodes s)})
+  lift $ modify (\s -> s {nodes = IntMap.insert nodeId newNode (nodes s)})
   return nodeId
 
 -- | Write memory of local node
@@ -129,7 +127,7 @@ readMemory ::
   -> SimM Dynamic
 readMemory nodeId_maybe i = SimM $ do
   curNodeId <- lift $ gets currentNode
-  let nodeId = getKey $ fromMaybe curNodeId nodeId_maybe
+  let nodeId = fromMaybe curNodeId nodeId_maybe
   memVal <- fmap (IntMap.lookup i . nodeMemory . (IntMap.! nodeId)) $ lift $ gets nodes
   case memVal of
     Just val -> return val
@@ -139,8 +137,8 @@ readMemory nodeId_maybe i = SimM $ do
 componentCreator ::
   SimM ComponentId
 componentCreator = SimM $ do
-  nId <- fmap getKey $ lift $ gets currentNode
-  cId <- fmap getKey $ lift $ gets currentComponent
+  nId <- lift $ gets currentNode
+  cId <- lift $ gets currentComponent
   ns <- lift $ gets nodes
   let ces       = (nodeComponents (ns IntMap.! nId))
   let ce        = ces IntMap.! cId
@@ -154,7 +152,7 @@ componentLookup ::
   -> SimM (Maybe ComponentId) -- ^ 'Just' 'ComponentID' if the component is found, 'Nothing' otherwise
 componentLookup nodeId_maybe cName = SimM $ do
   curNodeId <- lift $ gets currentNode
-  let nId   = getKey $ fromMaybe curNodeId nodeId_maybe
+  let nId   = fromMaybe curNodeId nodeId_maybe
   nsLookup  <- fmap (nodeComponentLookup . (IntMap.! nId)) $ lift $ gets nodes
   return $ Map.lookup cName nsLookup
 

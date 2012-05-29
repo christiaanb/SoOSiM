@@ -7,19 +7,19 @@
 module SoOSiM.Types where
 
 import Control.Concurrent.STM
+import Control.Concurrent.Supply
 import Control.Monad.Coroutine
 import Control.Monad.State
 import Control.Monad.Trans.Class ()
 import Data.Dynamic
 import Data.IntMap
 import Data.Map
-import Unique
-import UniqSupply
 
+import SoOSiM.Util
+
+type Unique        = Int
 type ComponentId   = Unique
 type ComponentName = String
-
-deriving instance Typeable Unique
 
 -- | Type class that defines every OS component
 class ComponentIface s where
@@ -119,17 +119,16 @@ data SimState =
   SimState { currentComponent :: ComponentId  -- ^ The 'ComponentId' of the component currently under evaluation
            , currentNode      :: NodeId       -- ^ The 'NodeId' of the node containing the component currently under evaluation
            , nodes            :: IntMap Node  -- ^ The set of nodes comprising the entire system
-           , uniqueSupply     :: UniqSupply   -- ^ Unlimited supply of unique values
+           , uniqueSupply     :: Supply       -- ^ Unlimited supply of unique values
            , componentMap     :: Map String StateContainer
            }
 
 data StateContainer = forall s . ComponentIface s => SC s
 
 instance MonadUnique SimMonad where
-  getUniqueSupplyM = gets uniqueSupply
+  --getUniqueSupplyM = gets uniqueSupply
   getUniqueM       = do
     supply <- gets uniqueSupply
-    let (supply'',supply') = splitUniqSupply supply
-        unique             = uniqFromSupply supply''
+    let (unique,supply') = freshId supply
     modify (\s -> s {uniqueSupply = supply'})
     return unique

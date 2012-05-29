@@ -17,7 +17,6 @@ import Control.Monad.Trans.Class ()
 import Data.IntMap as IM
 import Data.Map    as Map
 import qualified Data.Traversable as T
-import Unique
 
 import SoOSiM.Types
 
@@ -26,7 +25,7 @@ modifyNode ::
   -> (Node -> Node) -- ^ Update function
   -> SimMonad ()
 modifyNode i f =
-  modify (\s -> s {nodes = IM.adjust f (getKey i) (nodes s)})
+  modify (\s -> s {nodes = IM.adjust f i (nodes s)})
 
 modifyNodeM ::
   NodeId                   -- ^ ID of the node you want to update
@@ -34,15 +33,14 @@ modifyNodeM ::
   -> SimMonad ()
 modifyNodeM i f = do
   ns <- gets nodes
-  f $ ns IM.! (getKey i)
+  f $ ns IM.! i
 
 componentNode ::
   ComponentId
   -> SimMonad NodeId
 componentNode cId = do
-  let key = getKey cId
   ns <- gets nodes
-  let (node:_) = IM.elems $ IM.filter (\n -> IM.member key (nodeComponents n)) ns
+  let (node:_) = IM.elems $ IM.filter (\n -> IM.member cId (nodeComponents n)) ns
   return (nodeId node)
 
 updateMsgBuffer ::
@@ -51,12 +49,12 @@ updateMsgBuffer ::
   -> Node           -- ^ Node containing the component
   -> SimMonad ()
 updateMsgBuffer recipientId msg@(ComponentMsg senderId _) node = do
-    let ce = (nodeComponents node) IM.! (getKey recipientId)
+    let ce = (nodeComponents node) IM.! recipientId
     lift $ atomically $ modifyTVar (msgBuffer ce) (\msgs -> msgs ++ [msg])
     lift $ atomically $ modifyTVar (simMetaData ce) (\mData -> mData {msgsReceived = Map.insertWith (+) senderId 1 (msgsReceived mData)})
 
 updateMsgBuffer recipientId msg node = do
-    let ce = (nodeComponents node) IM.! (getKey recipientId)
+    let ce = (nodeComponents node) IM.! recipientId
     lift $ atomically $ modifyTVar (msgBuffer ce) (\msgs -> msgs ++ [msg])
 
 incrSendCounter ::
@@ -65,7 +63,7 @@ incrSendCounter ::
   -> Node        -- Node containing the sender
   -> SimMonad ()
 incrSendCounter recipientId senderId node = do
-  let ce = (nodeComponents node) IM.! (getKey senderId)
+  let ce = (nodeComponents node) IM.! senderId
   lift $ atomically $ modifyTVar (simMetaData ce) (\mData -> mData {msgsSend = Map.insertWith (+) recipientId 1 (msgsSend mData)})
 
 updateTraceBuffer ::
@@ -73,10 +71,10 @@ updateTraceBuffer ::
   -> String
   -> Node
   -> Node
-updateTraceBuffer componentId msg node =
+updateTraceBuffer cmpId msg node =
     node { nodeComponents = f (nodeComponents node)}
   where
-    f ccs = IM.adjust g (getKey componentId) ccs
+    f ccs = IM.adjust g cmpId ccs
     g cc  = cc { traceMsgs = msg:(traceMsgs cc)}
 
 -- | Update component context according to simulator event
@@ -200,8 +198,8 @@ executeNodeSmall node = do
     --return ()
     case (nodeComponentOrder node) of
       [] -> return ()
-      (c:_) -> do
-          executeComponent ((nodeComponents node) IM.! (getKey c))
+      (cId:_) -> do
+          executeComponent ((nodeComponents node) IM.! cId)
           modifyNode (nodeId node) (\n -> n {nodeComponentOrder = rotate (nodeComponentOrder n)})
   where
     rotate []     = []
