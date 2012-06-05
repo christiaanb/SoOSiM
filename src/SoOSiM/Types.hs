@@ -1,19 +1,20 @@
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 module SoOSiM.Types where
 
-import Control.Concurrent.STM
-import Control.Concurrent.Supply
-import Control.Monad.Coroutine
-import Control.Monad.State
-import Control.Monad.Trans.Class ()
-import Data.Dynamic
-import Data.IntMap
-import Data.Map
+import           Control.Concurrent.STM
+import           Control.Concurrent.Supply
+import           Control.Monad.Coroutine
+import qualified Control.Monad.State as State
+import           Control.Monad.Trans.Class ()
+import           Data.Dynamic
+import           Data.IntMap
+import           Data.Map
 
 import SoOSiM.Util
 
@@ -23,12 +24,15 @@ type ComponentName = String
 
 -- | Type class that defines every OS component
 class ComponentIface s where
+  type Send    s
+  type Receive s
+  type State   s
   -- | The minimal internal state of your component
-  initState          :: s
+  initState          :: s -> State s
   -- | A function returning the unique global name of your component
   componentName      :: s -> ComponentName
   -- | The function defining the behaviour of your component
-  componentBehaviour :: s -> ComponentInput -> SimM s
+  componentBehaviour :: s -> State s -> Input (Receive s) -> SimM (State s)
 
 -- | Context of a running component in the simulator.
 --
@@ -37,12 +41,18 @@ class ComponentIface s where
 -- their internal state.
 data ComponentContext = forall s . ComponentIface s =>
   CC { componentId        :: ComponentId
-     , currentStatus      :: TVar (ComponentStatus s) -- ^ Status of the component
-     , componentState     :: TVar s                   -- ^ State internal to the component
-     , creator            :: ComponentId              -- ^ 'ComponentId' of the component that created this component
-     , msgBuffer          :: TVar [ComponentInput]    -- ^ Message waiting to be processed by the component
-     , traceMsgs          :: [String]                 -- ^ Trace message buffer
-     , simMetaData        :: TVar SimMetaData         -- ^ Statistical information regarding a component
+     , currentStatus      :: TVar (ComponentStatus s)
+     -- ^ Status of the component
+     , componentState     :: TVar s
+     -- ^ State internal to the component
+     , creator            :: ComponentId
+     -- ^ 'ComponentId' of the component that created this component
+     , msgBuffer          :: TVar [Input Dynamic]
+     -- ^ Message waiting to be processed by the component
+     , traceMsgs          :: [String]
+     -- ^ Trace message buffer
+     , simMetaData        :: TVar SimMetaData
+     -- ^ Statistical information regarding a component
      }
 
 data SimMetaData
@@ -50,38 +60,54 @@ data SimMetaData
   { cyclesRunning :: Int
   , cyclesWaiting :: Int
   , cyclesIdling  :: Int
-  , msgsReceived  :: Map ComponentId Int -- ^ Key: senderId; Value: number of messages
-  , msgsSend      :: Map ComponentId Int -- ^ Key: receiverId: Value: number of messages
+  , msgsReceived  :: Map ComponentId Int
+  -- ^ Key: senderId; Value: number of messages
+  , msgsSend      :: Map ComponentId Int
+  -- ^ Key: receiverId: Value: number of messages
   }
 
 -- | Status of a running component
 data ComponentStatus a
-  = Idle                                          -- ^ Component is doing nothing
-  | WaitingForMsg ComponentId (Dynamic -> SimM a) -- ^ Component is waiting for a message from 'ComponentId', will continue with computation ('Dynamic' -> 'SimM' a) once received
-  | Running                                       -- ^ Component is busy doing computations
+  = Idle
+  -- ^ Component is doing nothing
+  | WaitingForMsg ComponentId (() -> SimM a)
+  -- ^ Component is waiting for a message from 'ComponentId', will continue
+  -- with computation ('(' -> 'SimM' a) once received
+  | Running
+  -- ^ Component is busy doing computations
 
 -- | Events send to components by the simulator
-data ComponentInput = ComponentMsg ComponentId Dynamic -- ^ A message send another component: the field argument is the 'ComponentId' of the sender, the second field the message content
-                    | NodeMsg NodeId Dynamic           -- ^ A message send by a node: the first field is the 'NodeId' of the sending node, the second field the message content
-                    | Initialize                       -- ^ Event send when a component is first created
-                    | Deinitialize                     -- ^ Event send when a component is about to be removed
-                    | Tick                             -- ^ Event send every simulation round
-  deriving Show
+data Input a
+  = Message a ReturnChannel
+  -- ^ A message send another component: the field argument is the
+  -- 'ComponentId' of the sender, the second field the message content
+  | Tick
+  -- ^ Event send every simulation round
+
+newtype ReturnChannel = RC { unRC :: (ComponentId, TVar Dynamic) }
 
 type NodeId   = Unique
--- | Meta-data describing the functionaly of the computing node, currently just a singleton type.
+-- | Meta-data describing the functionaly of the computing node, currently
+-- just a singleton type.
 data NodeInfo = NodeInfo
 
 -- | Nodes represent computing entities in the simulator,
 -- and host the OS components and application threads
-data Node =
-  Node { nodeId              :: NodeId                        -- ^ Globally Unique ID of the node
-       , nodeInfo            :: NodeInfo                      -- ^ Meta-data describing the node
-       , nodeComponentLookup :: Map ComponentName ComponentId -- ^ Lookup table of OS components running on the node, key: the 'ComponentName', value: unique 'ComponentId'
-       , nodeComponents      :: IntMap ComponentContext       -- ^ Map of component contexts, key is the 'ComponentId'
-       , nodeMemory          :: IntMap Dynamic                -- ^ Node-local memory
-       , nodeComponentOrder  :: [ComponentId]
-       }
+data Node
+  = Node
+  { nodeId              :: NodeId
+  -- ^ Globally Unique ID of the node
+  , nodeInfo            :: NodeInfo
+  -- ^ Meta-data describing the node
+  , nodeComponentLookup :: Map ComponentName ComponentId
+  -- ^ Lookup table of OS components running on the node, key: the
+  -- 'ComponentName', value: unique 'ComponentId'
+  , nodeComponents      :: IntMap ComponentContext
+  -- ^ Map of component contexts, key is the 'ComponentId'
+  , nodeMemory          :: IntMap Dynamic
+  -- ^ Node-local memory
+  , nodeComponentOrder  :: [ComponentId]
+  }
 
 -- | The simulator monad used by the OS components offers resumable
 -- computations in the form of coroutines. These resumable computations
@@ -100,7 +126,12 @@ data Node =
 -- message from. The execute a resumeable computation you simply do:
 --   'resume <comp>'
 --
-newtype SimM a = SimM { runSimM :: Coroutine (RequestOrYield Unique Dynamic) SimMonad a }
+newtype SimM a = SimM { runSimM ::
+                          Coroutine
+                            (RequestOrYield Unique ())
+                            SimMonad
+                            a
+                      }
   deriving (Functor, Monad)
 
 data RequestOrYield request response x
@@ -111,24 +142,28 @@ instance Functor (RequestOrYield x f) where
   fmap f (Request x g) = Request x (f . g)
   fmap f (Yield y)     = Yield (f y)
 
--- | The internal monad of the simulator is currently a simple state-monad wrapping IO
-type SimMonad  = StateT SimState IO
+-- | The internal monad of the simulator is currently a simple state-monad
+-- wrapping IO
+type SimMonad  = State.StateT SimState IO
 
 -- | The internal simulator state
-data SimState =
-  SimState { currentComponent :: ComponentId  -- ^ The 'ComponentId' of the component currently under evaluation
-           , currentNode      :: NodeId       -- ^ The 'NodeId' of the node containing the component currently under evaluation
-           , nodes            :: IntMap Node  -- ^ The set of nodes comprising the entire system
-           , uniqueSupply     :: Supply       -- ^ Unlimited supply of unique values
-           , componentMap     :: Map String StateContainer
-           }
-
-data StateContainer = forall s . ComponentIface s => SC s
+data SimState
+  = SimState
+  { currentComponent :: ComponentId
+  -- ^ The 'ComponentId' of the component currently under evaluation
+  , currentNode      :: NodeId
+  -- ^ The 'NodeId' of the node containing the component currently under
+  -- evaluation
+  , nodes            :: IntMap Node
+  -- ^ The set of nodes comprising the entire system
+  , uniqueSupply     :: Supply
+  -- ^ Unlimited supply of unique values
+  }
 
 instance MonadUnique SimMonad where
   --getUniqueSupplyM = gets uniqueSupply
   getUniqueM       = do
-    supply <- gets uniqueSupply
+    supply <- State.gets uniqueSupply
     let (unique,supply') = freshId supply
-    modify (\s -> s {uniqueSupply = supply'})
+    State.modify (\s -> s {uniqueSupply = supply'})
     return unique
