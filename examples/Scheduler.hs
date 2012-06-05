@@ -9,11 +9,10 @@ import MemoryManager
 import MemoryManager.Types
 
 scheduler ::
-  Scheduler
-  -> SchedulerState
+  SchedulerState
   -> Input SchedulerMsg
   -> Sim SchedulerState
-scheduler _ schedState (Message (Execute iface memCommands) retAddr) = do
+scheduler schedState (Message (Execute iface memCommands) retAddr) = do
   nodeId    <- createNode
   memCompId <- createComponent (Just nodeId) Nothing MemoryManager
   mapM_ (\c -> invokeAsync MemoryManager Nothing memCompId c ignore)
@@ -22,7 +21,7 @@ scheduler _ schedState (Message (Execute iface memCommands) retAddr) = do
   respond Scheduler Nothing retAddr compId
   yield schedState
 
-scheduler _ schedState _ = yield schedState
+scheduler schedState _ = yield schedState
 
 instance ComponentInterface Scheduler where
   type State Scheduler   = SchedulerState
@@ -30,4 +29,4 @@ instance ComponentInterface Scheduler where
   type Send Scheduler    = ComponentId
   initState              = const (SchedulerState [] [])
   componentName          = const ("Scheduler")
-  componentBehaviour     = scheduler
+  componentBehaviour     = const scheduler

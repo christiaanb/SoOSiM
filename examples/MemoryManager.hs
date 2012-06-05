@@ -8,8 +8,8 @@ import SoOSiM
 import MemoryManager.Types
 import MemoryManager.Util
 
-memoryManager :: MemoryManager -> MemState -> Input MemCommand -> Sim MemState
-memoryManager _ s (Message content retAddr)
+memoryManager :: MemState -> Input MemCommand -> Sim MemState
+memoryManager s (Message content retAddr)
   | (Register addr sc src) <- content
   = yield $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
 
@@ -37,12 +37,12 @@ memoryManager _ s (Message content retAddr)
         invokeAsync MemoryManager Nothing remote content ignore
         yield s
 
-memoryManager _ s _ = yield s
+memoryManager s _ = yield s
 
 instance ComponentInterface MemoryManager where
   type State MemoryManager   = MemState
   type Receive MemoryManager = MemCommand
   type Send MemoryManager    = Dynamic
-  initState          = const (MemState [])
-  componentName      = const "MemoryManager"
-  componentBehaviour = memoryManager
+  initState                  = const (MemState [])
+  componentName              = const "MemoryManager"
+  componentBehaviour         = const memoryManager
