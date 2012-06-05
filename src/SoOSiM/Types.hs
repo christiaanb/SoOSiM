@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 module SoOSiM.Types where
@@ -11,6 +12,7 @@ import           Control.Concurrent.STM     (TVar)
 import           Control.Concurrent.Supply  (Supply,freshId)
 import           Control.Monad.Coroutine    (Coroutine)
 import qualified Control.Monad.State        as State
+import           Control.Monad.State        (lift,get,put)
 import           Data.Dynamic               (Dynamic)
 import           Data.IntMap                (IntMap)
 import           Data.Map                   (Map)
@@ -22,7 +24,7 @@ type ComponentId   = Unique
 type ComponentName = String
 
 -- | Type class that defines every OS component
-class ComponentIface s where
+class ComponentInterface s where
   type Send    s
   type Receive s
   type State   s
@@ -31,14 +33,14 @@ class ComponentIface s where
   -- | A function returning the unique global name of your component
   componentName      :: s -> ComponentName
   -- | The function defining the behaviour of your component
-  componentBehaviour :: s -> State s -> Input (Receive s) -> SimM (State s)
+  componentBehaviour :: s -> State s -> Input (Receive s) -> Sim (State s)
 
 -- | Context of a running component in the simulator.
 --
 -- We need existential types because we need to make a single collection
 -- of several component contexts, each having their own type representing
 -- their internal state.
-data ComponentContext = forall s . ComponentIface s =>
+data ComponentContext = forall s . ComponentInterface s =>
   CC { componentId        :: ComponentId
      , currentStatus      :: TVar (ComponentStatus s)
      -- ^ Status of the component
@@ -69,7 +71,7 @@ data SimMetaData
 data ComponentStatus a
   = Idle
   -- ^ Component is doing nothing
-  | WaitingForMsg ComponentId (() -> SimM a)
+  | WaitingForMsg ComponentId (() -> Sim a)
   -- ^ Component is waiting for a message from 'ComponentId', will continue
   -- with computation ('(' -> 'SimM' a) once received
   | Running
@@ -125,13 +127,14 @@ data Node
 -- message from. The execute a resumeable computation you simply do:
 --   'resume <comp>'
 --
-newtype SimM a = SimM { runSimM ::
-                          Coroutine
-                            (RequestOrYield Unique ())
-                            SimMonad
-                            a
-                      }
-  deriving (Functor, Monad)
+newtype Sim a = Sim { runSimM ::SimInternal a }
+  deriving (Functor, Monad, State.MonadState SimState)
+
+type SimInternal = Coroutine (RequestOrYield Unique ()) SimMonad
+
+instance State.MonadState SimState SimInternal where
+  get   = lift get
+  put x = lift (put x)
 
 data RequestOrYield request response x
   = Request request (response -> x)
