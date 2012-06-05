@@ -97,15 +97,15 @@ handleInput ::
   (ComponentInterface iface, Typeable (Receive iface))
   => iface
   -> TVar SimMetaData
-  -- | Current component context
   -> ComponentStatus iface
+  -- ^ Current component context
   -> State iface
-  -- | Simulator Event
   -> Input Dynamic
-  -- | Returns tuple of: ((potentially updated) component context,
+  -- ^ Simulator Event
+  -> SimMonad ((ComponentStatus iface, State iface), Maybe (Input Dynamic))
+  -- ^ Returns tuple of: ((potentially updated) component context,
   -- (potentially update) component state, 'Nothing' when event is consumed;
   -- 'Just' 'ComponentInput' otherwise)
-  -> SimMonad ((ComponentStatus iface, State iface), Maybe (Input Dynamic))
 handleInput _ metaTV st@(WaitingFor waitingFor f) state
   msg@(Message _ (RA (sender,_)))
   | waitingFor == sender

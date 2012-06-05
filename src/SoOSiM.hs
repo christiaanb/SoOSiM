@@ -1,22 +1,29 @@
 module SoOSiM
-  ( Sim
+  ( module SoOSiM.SimMonad
+  , Sim
   , ComponentId
   , NodeId
   , ComponentInterface (..)
   , Input (..)
-  , module SoOSiM.SimMonad
-  , unmarshall
+  , Typeable
   , ignore
+  , tick
+  , unmarshall
+  , returnAddress
   )
 where
 
+import Data.Typeable    (Typeable)
 import SoOSiM.SimMonad
-import SoOSiM.Types    (Sim,ComponentId,NodeId,ComponentInterface(..)
-                       ,Input(..))
-import SoOSiM.Util     (unmarshall)
+import SoOSiM.Simulator (tick)
+import SoOSiM.Simulator.Util (returnAddress)
+import SoOSiM.Types     (ComponentId,ComponentInterface(..),Input(..),NodeId
+                        ,Sim)
+import SoOSiM.Util      (unmarshall)
 
 ignore ::
   ComponentInterface s
-  => (Send s)
+  => s
+  -> (Send s)
   -> Sim ()
-ignore = const (return ())
+ignore _ = const (return ())

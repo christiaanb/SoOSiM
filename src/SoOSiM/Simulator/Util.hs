@@ -99,3 +99,7 @@ fromDynMsg _ (Message content retChan) =
   Message (unmarshall "fromDynMsg" content) retChan
 fromDynMsg _ Tick = Tick
 
+returnAddress ::
+  ReturnAddress
+  -> ComponentId
+returnAddress = fst . unRA
