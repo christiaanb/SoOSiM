@@ -137,11 +137,9 @@ respond _ senderM (RA (recipient,respTV)) content = Sim $ do
 
 -- | Yield to the simulator scheduler
 yield ::
-  ComponentInterface iface
-  => iface
-  -> (State iface)
-  -> Sim (State iface)
-yield _ s = Sim $ suspend (Yield (return s))
+  a
+  -> Sim a
+yield s = Sim $ suspend (Yield (return s))
 
 -- | Get the component id of your component
 getComponentId ::

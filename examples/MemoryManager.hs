@@ -11,7 +11,7 @@ import MemoryManager.Util
 memoryManager :: MemoryManager -> MemState -> Input MemCommand -> Sim MemState
 memoryManager _ s (Message content retAddr)
   | (Register addr sc src) <- content
-  = yield MemoryManager $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
+  = yield $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
 
   | (Read addr) <- content
   = do
@@ -20,11 +20,11 @@ memoryManager _ s (Message content retAddr)
       Nothing -> do
         addrVal <- readMemory Nothing addr
         respond MemoryManager Nothing retAddr addrVal
-        yield MemoryManager s
+        yield s
       Just remote -> do
         response <- invoke MemoryManager Nothing remote content
         respond MemoryManager Nothing retAddr response
-        yield MemoryManager s
+        yield s
 
   | (Write addr val) <- content
   = do
@@ -32,12 +32,12 @@ memoryManager _ s (Message content retAddr)
     case (sourceId src) of
       Nothing -> do
         addrVal <- writeMemory Nothing addr val
-        yield MemoryManager s
+        yield s
       Just remote -> do
-        invokeAsync MemoryManager Nothing remote content (ignore MemoryManager)
-        yield MemoryManager s
+        invokeAsync MemoryManager Nothing remote content ignore
+        yield s
 
-memoryManager _ s _ = yield MemoryManager s
+memoryManager _ s _ = yield s
 
 instance ComponentInterface MemoryManager where
   type State MemoryManager   = MemState

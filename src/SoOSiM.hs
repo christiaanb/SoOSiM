@@ -22,8 +22,6 @@ import SoOSiM.Types     (ComponentId,ComponentInterface(..),Input(..),NodeId
 import SoOSiM.Util      (unmarshall)
 
 ignore ::
-  ComponentInterface s
-  => s
-  -> (Send s)
+  a
   -> Sim ()
-ignore _ = const (return ())
+ignore = const (return ())
