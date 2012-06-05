@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -13,7 +14,7 @@ import           Control.Concurrent.Supply  (Supply,freshId)
 import           Control.Monad.Coroutine    (Coroutine)
 import qualified Control.Monad.State        as State
 import           Control.Monad.State        (lift,get,put)
-import           Data.Dynamic               (Dynamic)
+import           Data.Dynamic               (Dynamic,Typeable)
 import           Data.IntMap                (IntMap)
 import           Data.Map                   (Map)
 
@@ -40,7 +41,7 @@ class ComponentInterface s where
 -- We need existential types because we need to make a single collection
 -- of several component contexts, each having their own type representing
 -- their internal state.
-data ComponentContext = forall s . ComponentInterface s =>
+data ComponentContext = forall s . (ComponentInterface s, Typeable (Receive s)) =>
   CC { componentIface     :: s
      -- ^ Interface type
      , componentId        :: ComponentId
@@ -72,12 +73,12 @@ data SimMetaData
 
 -- | Status of a running component
 data ComponentStatus a
-  = Idle
+  = ReadyToIdle
   -- ^ Component is doing nothing
-  | WaitingForMsg ComponentId (() -> Sim a)
+  | WaitingFor ComponentId (() -> Sim (State a))
   -- ^ Component is waiting for a message from 'ComponentId', will continue
   -- with computation ('(' -> 'SimM' a) once received
-  | Running
+  | ReadyToRun
   -- ^ Component is busy doing computations
 
 -- | Events send to components by the simulator
@@ -130,7 +131,7 @@ data Node
 -- message from. The execute a resumeable computation you simply do:
 --   'resume <comp>'
 --
-newtype Sim a = Sim { runSimM :: SimInternal a }
+newtype Sim a = Sim { runSim :: SimInternal a }
   deriving (Functor, Monad, State.MonadState SimState, MonadUnique)
 
 type SimInternal = Coroutine (RequestOrYield Unique ()) SimMonad

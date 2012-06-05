@@ -11,13 +11,13 @@ import qualified Data.IntMap             as IM
 import qualified Data.Map                as Map
 import           Data.Maybe              (fromMaybe)
 
-import SoOSiM.Simulator
+import SoOSiM.Simulator.Util
 import SoOSiM.Types
 import SoOSiM.Util
 
 -- | Create a new component
 createComponent ::
-  (ComponentInterface iface)
+  (ComponentInterface iface, Typeable (Receive iface))
   => Maybe NodeId
   -- ^ Node to create component on, leave to 'Nothing' to create on current
   -- node
@@ -32,7 +32,7 @@ createComponent nodeIdM parentIdM iface = Sim $ do
     parentId  <- fmap (`fromMaybe` parentIdM) $ gets currentComponent
     compId    <- getUniqueM
 
-    statusTV  <- (lift . lift) $ newTVar Idle
+    statusTV  <- (lift . lift) $ newTVar ReadyToRun
     stateTV   <- (lift . lift) $ newTVar (initState iface)
     msgBufTV  <- (lift . lift) $ newTVar []
     let meta  = SimMetaData 0 0 0 Map.empty Map.empty
