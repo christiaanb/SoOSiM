@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeSynonymInstances       #-}
 module SoOSiM.Types where
 
-import           Control.Concurrent.STM     (TVar)
+import           Control.Concurrent.STM     (STM,TVar)
 import           Control.Concurrent.Supply  (Supply,freshId)
 import           Control.Monad.Coroutine    (Coroutine)
 import qualified Control.Monad.State        as State
@@ -41,13 +41,16 @@ class ComponentInterface s where
 -- of several component contexts, each having their own type representing
 -- their internal state.
 data ComponentContext = forall s . ComponentInterface s =>
-  CC { componentId        :: ComponentId
-     , currentStatus      :: TVar (ComponentStatus s)
-     -- ^ Status of the component
-     , componentState     :: TVar s
-     -- ^ State internal to the component
+  CC { componentIface     :: s
+     -- ^ Interface type
+     , componentId        :: ComponentId
+     -- ^ 'ComponentId' of this component
      , creator            :: ComponentId
      -- ^ 'ComponentId' of the component that created this component
+     , currentStatus      :: TVar (ComponentStatus s)
+     -- ^ Status of the component
+     , componentState     :: TVar (State s)
+     -- ^ State internal to the component
      , msgBuffer          :: TVar [Input Dynamic]
      -- ^ Message waiting to be processed by the component
      , traceMsgs          :: [String]
@@ -79,13 +82,13 @@ data ComponentStatus a
 
 -- | Events send to components by the simulator
 data Input a
-  = Message a ReturnChannel
+  = Message a ReturnAddress
   -- ^ A message send another component: the field argument is the
   -- 'ComponentId' of the sender, the second field the message content
   | Tick
   -- ^ Event send every simulation round
 
-newtype ReturnChannel = RC { unRC :: (ComponentId, TVar Dynamic) }
+newtype ReturnAddress = RA { unRA :: (ComponentId, TVar Dynamic) }
 
 type NodeId   = Unique
 -- | Meta-data describing the functionaly of the computing node, currently
@@ -127,14 +130,17 @@ data Node
 -- message from. The execute a resumeable computation you simply do:
 --   'resume <comp>'
 --
-newtype Sim a = Sim { runSimM ::SimInternal a }
-  deriving (Functor, Monad, State.MonadState SimState)
+newtype Sim a = Sim { runSimM :: SimInternal a }
+  deriving (Functor, Monad, State.MonadState SimState, MonadUnique)
 
 type SimInternal = Coroutine (RequestOrYield Unique ()) SimMonad
 
 instance State.MonadState SimState SimInternal where
   get   = lift get
   put x = lift (put x)
+
+instance MonadUnique SimInternal where
+  getUniqueM = lift getUniqueM
 
 data RequestOrYield request response x
   = Request request (response -> x)
@@ -145,8 +151,8 @@ instance Functor (RequestOrYield x f) where
   fmap f (Yield y)     = Yield (f y)
 
 -- | The internal monad of the simulator is currently a simple state-monad
--- wrapping IO
-type SimMonad  = State.StateT SimState IO
+-- wrapping STM
+type SimMonad  = State.StateT SimState STM
 
 -- | The internal simulator state
 data SimState
