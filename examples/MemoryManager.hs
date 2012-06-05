@@ -1,43 +1,48 @@
+{-# LANGUAGE TypeFamilies #-}
 module MemoryManager where
 
+import Data.Dynamic
 import Data.IntMap
 import SoOSiM
 
 import MemoryManager.Types
 import MemoryManager.Util
 
-memoryManager :: MemState -> ComponentInput -> SimM MemState
-memoryManager s (ComponentMsg senderId msgContent)
-  | Just (Register addr sc src) <- safeUnmarshall msgContent
-  = yield $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
+memoryManager :: MemoryManager -> MemState -> Input MemCommand -> Sim MemState
+memoryManager _ s (Message content retAddr)
+  | (Register addr sc src) <- content
+  = yield MemoryManager $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
 
-  | Just (Read addr) <- safeUnmarshall msgContent
+  | (Read addr) <- content
   = do
     let src = checkAddress (addressLookup s) addr
     case (sourceId src) of
       Nothing -> do
         addrVal <- readMemory Nothing addr
-        respond Nothing senderId addrVal
-        yield s
+        respond MemoryManager Nothing retAddr addrVal
+        yield MemoryManager s
       Just remote -> do
-        response <- invoke Nothing remote msgContent
-        respond Nothing senderId response
-        yield s
+        response <- invoke MemoryManager Nothing remote content
+        respond MemoryManager Nothing retAddr response
+        yield MemoryManager s
 
-  | Just (Write addr val) <- safeUnmarshall msgContent
+  | (Write addr val) <- content
   = do
     let src = checkAddress (addressLookup s) addr
     case (sourceId src) of
       Nothing -> do
         addrVal <- writeMemory Nothing addr val
-        yield s
+        yield MemoryManager s
       Just remote -> do
-        invokeAsync Nothing remote msgContent ignore
-        yield s
+        invokeAsync MemoryManager Nothing remote content (ignore MemoryManager)
+        yield MemoryManager s
 
-memoryManager s _ = return s
+memoryManager _ s _ = yield MemoryManager s
 
-instance ComponentIface MemState where
-  initState          = MemState []
-  componentName _    = "MemoryManager"
+instance ComponentInterface MemoryManager where
+  type State MemoryManager   = MemState
+  type Receive MemoryManager = MemCommand
+  type Send MemoryManager    = Dynamic
+  initState          = const (MemState [])
+  componentName      = const "MemoryManager"
   componentBehaviour = memoryManager

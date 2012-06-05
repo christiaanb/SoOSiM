@@ -1,33 +1,32 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 module Scheduler where
 
 import Data.Maybe
 import SoOSiM
 
 import Scheduler.Types
+import MemoryManager
+import MemoryManager.Types
 
-scheduler schedState (ComponentMsg sender content) = do
-  case (safeUnmarshall content) of
-    Just (Execute cname memCommands) -> do
-        nodeId <- createNode
-        memCompId <- createComponent (Just nodeId) Nothing "MemoryManager"
-        mapM_ ((\c -> invokeAsync Nothing memCompId c ignore) . marshall) memCommands
-        compId <- createComponent (Just nodeId) (Just sender) cname
-        respond Nothing sender (marshall compId)
-        return schedState
-    Nothing -> return schedState
+scheduler ::
+  Scheduler
+  -> SchedulerState
+  -> Input SchedulerMsg
+  -> Sim SchedulerState
+scheduler _ schedState (Message (Execute iface memCommands) retAddr) = do
+  nodeId    <- createNode
+  memCompId <- createComponent (Just nodeId) Nothing MemoryManager
+  mapM_ (\c -> invokeAsync MemoryManager Nothing memCompId c (ignore MemoryManager)) memCommands
+  compId    <- createComponent (Just nodeId) (Just $ returnAddress retAddr) iface
+  respond Scheduler Nothing retAddr compId
+  yield Scheduler schedState
 
-scheduler schedState _ = return schedState
+scheduler _ schedState _ = yield Scheduler schedState
 
-createComponentRequest ::
-  String
-  -> SimM ComponentId
-createComponentRequest s = do
-  schedulerId    <- fmap fromJust $ componentLookup Nothing "Scheduler"
-  componentId    <- fmap unmarshall $ invoke Nothing schedulerId (marshall s)
-  return componentId
-
-instance ComponentIface SchedulerState where
-  initState          = SchedulerState [] []
-  componentName _    = "Scheduler"
-  componentBehaviour = scheduler
+instance ComponentInterface Scheduler where
+  type State Scheduler   = SchedulerState
+  type Receive Scheduler = SchedulerMsg
+  type Send Scheduler    = ComponentId
+  initState              = const (SchedulerState [] [])
+  componentName          = const ("Scheduler")
+  componentBehaviour     = scheduler

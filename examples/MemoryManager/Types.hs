@@ -4,6 +4,8 @@ module MemoryManager.Types where
 
 import SoOSiM
 
+data MemoryManager = MemoryManager
+
 data MemorySource
   = MemorySource
   { baseAddress :: Int

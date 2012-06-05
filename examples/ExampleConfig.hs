@@ -1,18 +1,16 @@
 module ExampleConfig where
 
-import Control.Concurrent.Supply
-import Control.Concurrent.STM
-import Data.Maybe
-import qualified Data.IntMap as IM
-import qualified Data.Map    as Map
-import SoOSiM
-import SoOSiM.Simulator
-import SoOSiM.Types
-import Text.PrettyPrint.HughesPJ
+import           Control.Concurrent.Supply
+import           Control.Concurrent.STM
+import           Data.Maybe
+import qualified Data.IntMap                as IM
+import qualified Data.Map                   as Map
+import           SoOSiM
+import           SoOSiM.Types
+import           Text.PrettyPrint.HughesPJ
 
-import HeatMap.Application
-import HeatMap.Types
---import Fibbo
+import           HeatMap.Application
+import           HeatMap.Types
 
 import MemoryManager
 import MemoryManager.Types
@@ -43,7 +41,7 @@ main = do
     loop n simState = do
       putStrLn $ "Cycle: " ++ show n
       (fmap render $ showIO simState) >>= putStrLn
-      simState' <- execStep simState
+      simState' <- tick simState
       c <- getChar
       case c of
         'n' -> loop (n+1) simState'
