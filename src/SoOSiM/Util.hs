@@ -1,7 +1,9 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module SoOSiM.Util where
 
-import Data.IntMap (IntMap,Key,member,adjust,insert)
-import Data.Monoid (Monoid (..))
+import Data.Dynamic (Typeable,Dynamic,fromDyn,toDyn)
+import Data.IntMap  (IntMap,Key,member,adjust,insert)
+import Data.Monoid  (Monoid (..))
 
 class MonadUnique m where
   getUniqueM :: m Int
@@ -17,3 +19,16 @@ mapAccumLM f a (x:xs) = do
   (a',y) <- f a x
   (a'',ys) <- mapAccumLM f a' xs
   return (a'',y:ys)
+
+unmarshall :: forall a . Typeable a => String -> Dynamic -> a
+unmarshall msg d = fromDyn d
+                 (error $  "unmarshal failed: expected value of type: "
+                        ++ show resDyn
+                        ++ ", received value of type: "
+                        ++ show d
+                        ++ "\nmessage:\n"
+                        ++ msg
+                 )
+  where
+    resDyn :: Dynamic
+    resDyn = toDyn (undefined :: a)

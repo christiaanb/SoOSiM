@@ -1,186 +1,229 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module SoOSiM.SimMonad where
 
-import Control.Concurrent.STM
-import Control.Monad.Coroutine
-import Control.Monad.State
-import Control.Monad.Trans.Class ()
-import Data.IntMap as IntMap
-import Data.Map    as Map
-import Data.Maybe
+import           Control.Concurrent.STM  (newTVar,readTVar,writeTVar)
+import           Control.Monad.Coroutine (suspend)
+import           Control.Monad.State     (gets,lift,modify)
+import           Data.Dynamic            (Dynamic,Typeable,toDyn)
+import qualified Data.IntMap             as IM
+import qualified Data.Map                as Map
+import           Data.Maybe              (fromMaybe)
 
 import SoOSiM.Simulator
 import SoOSiM.Types
 import SoOSiM.Util
 
--- | Register a component interface with the simulator
-registerComponent ::
-  ComponentIface s
-  => s
-  -> SimM ()
-registerComponent cstate = SimM $ do
-  lift $ modify (\s -> s {componentMap = Map.insert (componentName cstate) (SC cstate) (componentMap s)})
-
 -- | Create a new component
 createComponent ::
-  Maybe NodeId         -- ^ Node to create component on, leave to 'Nothing' to create on current node
-  -> Maybe ComponentId -- ^ ComponentId to set as parent, set to 'Nothing' to use own ComponentId
-  -> String            -- ^ Name of the registered component
-  -> SimM ComponentId  -- ^ 'ComponentId' of the created component
-createComponent nodeId_maybe parentId_maybe cname = SimM $ do
-    curNodeId     <- lift $ gets currentNode
-    let nId       = fromMaybe curNodeId nodeId_maybe
-    pId           <- lift $ gets currentComponent
-    let parentId  = fromMaybe pId parentId_maybe
-    cId           <- lift getUniqueM
+  (ComponentInterface iface)
+  => Maybe NodeId
+  -- ^ Node to create component on, leave to 'Nothing' to create on current
+  -- node
+  -> Maybe ComponentId
+  -- ^ ComponentId to set as parent, set to 'Nothing' to use own ComponentId
+  -> iface
+  -- ^ Component Interface
+  -> Sim ComponentId
+  -- ^ 'ComponentId' of the created component
+createComponent nodeIdM parentIdM iface = Sim $ do
+    nodeId    <- fmap (`fromMaybe` nodeIdM) $ gets currentNode
+    parentId  <- fmap (`fromMaybe` parentIdM) $ gets currentComponent
+    compId    <- getUniqueM
 
-    (SC cstate)   <- fmap (fromJust . Map.lookup cname) $ lift $ gets componentMap
-    cstateTV      <- (lift . lift) $ newTVarIO cstate
+    statusTV  <- (lift . lift) $ newTVar Idle
+    stateTV   <- (lift . lift) $ newTVar (initState iface)
+    msgBufTV  <- (lift . lift) $ newTVar []
+    let meta  = SimMetaData 0 0 0 Map.empty Map.empty
+    metaTV    <- (lift . lift) $ newTVar meta
 
-    statusTV      <- (lift . lift) $ newTVarIO Idle
-    bufferTV      <- (lift . lift) $ newTVarIO []
+    let component = (CC iface compId parentId statusTV stateTV msgBufTV [] metaTV)
 
-    let emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
-    emptyMetaTV   <- (lift . lift) $ newTVarIO emptyMeta
+    lift $ modifyNode nodeId (addComponent compId component)
 
-    lift $ modifyNode nId (addComponent cId (CC cId statusTV cstateTV parentId bufferTV [] emptyMetaTV))
-    return cId
+    return compId
   where
-    addComponent cId cc n@(Node {..}) =
-      n { nodeComponents      = IntMap.insert cId cc nodeComponents
+    cname = componentName iface
+
+    addComponent cId comp n@(Node {..}) =
+      n { nodeComponents = IM.insert cId comp nodeComponents
         , nodeComponentLookup = Map.insert cname cId nodeComponentLookup
-        , nodeComponentOrder  = nodeComponentOrder ++ [cId]
         }
 
 -- | Synchronously invoke another component
 invoke ::
-  Maybe ComponentId -- ^ Caller, leave 'Nothing' to set to current module
-  -> ComponentId    -- ^ Callee
-  -> Dynamic        -- ^ Argument
-  -> SimM Dynamic   -- ^ Response from recipient
-invoke senderMaybe recipient content = SimM $ do
-  nId <- lift $ componentNode recipient
-  mId <- lift $ gets currentComponent
-  let senderId = fromMaybe mId senderMaybe
-  senderNodeId <- lift $ componentNode senderId
-  lift $ modifyNodeM senderNodeId (incrSendCounter recipient senderId)
-  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg senderId content))
+  forall iface
+  . (ComponentInterface iface
+    , Typeable (Receive iface)
+    , Typeable (Send iface))
+  => iface
+  -- ^ Interface type
+  -> Maybe ComponentId
+  -- ^ Caller, leave 'Nothing' to set to current module
+  -> ComponentId
+  -- ^ Callee
+  -> Receive iface
+  -- ^ Argument
+  -> Sim (Send iface)
+  -- ^ Response from recipient
+invoke _ senderM recipient content = Sim $ do
+  sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
+  responseTV   <- lift . lift . newTVar $ toDyn (undefined :: Send iface)
+  let response = RA (sender,responseTV)
+  let message  = Message (toDyn content) response
+
+  rNodeId <- lift $ componentNode recipient
+  sNodeId <- lift $ componentNode sender
+  lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
+  lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
+
   suspend (Request recipient return)
+  fmap (unmarshall "invoke") . lift . lift $ readTVar responseTV
 
 -- | Invoke another component, handle response asynchronously
 invokeAsync ::
-  Maybe ComponentId       -- ^ Caller, leave 'Nothing' to set to current module
-  -> ComponentId          -- ^ Callee
-  -> Dynamic              -- ^ Argument
-  -> (Dynamic -> SimM ()) -- ^ Handler
-  -> SimM ()              -- ^ Call returns immediately
-invokeAsync senderMaybe recipient content _ = SimM $ do
-  nId <- lift $ componentNode recipient
-  mId <- lift $ gets currentComponent
-  let senderId = fromMaybe mId senderMaybe
-  senderNodeId <- lift $ componentNode senderId
-  lift $ modifyNodeM senderNodeId (incrSendCounter recipient senderId)
-  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg senderId content))
+  forall iface
+  . (ComponentInterface iface
+    , Typeable (Receive iface)
+    , Typeable (Send iface))
+  => iface
+  -- ^ Interface type
+  -> Maybe ComponentId
+  -- ^ Caller, leave 'Nothing' to set to current module
+  -> ComponentId
+  -- ^ Callee
+  -> (Receive iface)
+  -- ^ Argument
+  -> (Send iface -> Sim ())
+  -- ^ Handler
+  -> Sim ()
+  -- ^ Call returns immediately
+invokeAsync _ senderM recipient content _ = Sim $ do
+  sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
+  responseTV   <- lift . lift . newTVar $ toDyn (undefined :: Send iface)
+  let response = RA (sender,responseTV)
+  let message  = Message (toDyn content) response
+
+  rNodeId <- lift $ componentNode recipient
+  sNodeId <- lift $ componentNode sender
+  lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
+  lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
 
 -- | Respond to another component
 respond ::
-  Maybe ComponentId -- ^ Caller, leave 'Nothing' to set to current module
-  -> ComponentId    -- ^ Callee
-  -> Dynamic        -- ^ Argument
-  -> SimM ()        -- ^ Call returns immediately
-respond senderMaybe recipient content = SimM $ do
-  nId <- lift $ componentNode recipient
-  mId <- lift $ gets currentComponent
-  let senderId = fromMaybe mId senderMaybe
-  senderNodeId <- lift $ componentNode senderId
-  lift $ modifyNodeM senderNodeId (incrSendCounter recipient senderId)
-  lift $ modifyNodeM nId (updateMsgBuffer recipient (ComponentMsg senderId content))
+  forall iface
+  . ( ComponentInterface iface
+    , Typeable (Send iface))
+  => iface
+  -- ^ Interface type
+  -> Maybe ComponentId
+  -- ^ Caller, leave 'Nothing' to set to current module
+  -> ReturnAddress
+  -- ^ Return address
+  -> (Send iface)
+  -- ^ Argument
+  -> Sim ()
+  -- ^ Call returns immediately
+respond _ senderM (RA (recipient,respTV)) content = Sim $ do
+  sender <- fmap (`fromMaybe` senderM) $ gets currentComponent
+  lift . lift $ writeTVar respTV (toDyn content)
+
+  let message = Message undefined (RA (sender,undefined))
+  rNodeId <- lift $ componentNode recipient
+  sNodeId <- lift $ componentNode sender
+  lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
+  lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
 
 -- | Yield to the simulator scheduler
 yield ::
-  ComponentIface s
-  => s
-  -> SimM s
-yield s = SimM $ suspend (Yield (return s))
+  ComponentInterface iface
+  => (State iface)
+  -> Sim (State iface)
+yield s = Sim $ suspend (Yield (return s))
 
 -- | Get the component id of your component
 getComponentId ::
-  SimM ComponentId
-getComponentId = SimM $ lift $ gets currentComponent
+  Sim ComponentId
+getComponentId = Sim $ gets currentComponent
 
 -- | Get the node id of of the node your component is currently running on
 getNodeId ::
-  SimM NodeId
-getNodeId = SimM $ lift $ gets currentNode
+  Sim NodeId
+getNodeId = Sim $ gets currentNode
 
 -- | Create a new node
 createNode ::
-  SimM NodeId -- ^ NodeId of the created node
-createNode = SimM $ do
-  nodeId <- lift getUniqueM
-  let newNode = Node nodeId NodeInfo Map.empty IntMap.empty IntMap.empty []
-  lift $ modify (\s -> s {nodes = IntMap.insert nodeId newNode (nodes s)})
+  Sim NodeId -- ^ NodeId of the created node
+createNode = Sim $ do
+  nodeId <- getUniqueM
+  let newNode = Node nodeId NodeInfo Map.empty IM.empty IM.empty []
+  modify (\s -> s {nodes = IM.insert nodeId newNode (nodes s)})
   return nodeId
 
 -- | Write memory of local node
 writeMemory ::
   Typeable a
-  => Maybe NodeId -- ^ Node you want to write on, leave 'Nothing' to set to current node
-  -> Int       -- ^ Address to write
-  -> a         -- ^ Value to write
-  -> SimM ()
-writeMemory nodeId_maybe i val = SimM $ do
-    curNodeId <- lift $ gets currentNode
-    let nodeId = fromMaybe curNodeId nodeId_maybe
-    lift $ modifyNode nodeId writeVal
+  => Maybe NodeId
+  -- ^ Node you want to write on, leave 'Nothing' to set to current node
+  -> Int
+  -- ^ Address to write
+  -> a
+  -- ^ Value to write
+  -> Sim ()
+writeMemory nodeM addr val = Sim $ do
+    node <- fmap (`fromMaybe` nodeM) $ gets currentNode
+    lift $ modifyNode node writeVal
   where
-    writeVal n@(Node {..}) = n { nodeMemory = IntMap.insert i (toDyn val) nodeMemory }
+    writeVal n@(Node {..}) = n { nodeMemory = IM.insert addr (toDyn val)
+                                                nodeMemory }
 
 -- | Read memory of local node
 readMemory ::
-  Maybe NodeId -- ^ Node you want to look on, leave 'Nothing' to set to current node
-  -> Int       -- ^ Address to read
-  -> SimM Dynamic
-readMemory nodeId_maybe i = SimM $ do
-  curNodeId <- lift $ gets currentNode
-  let nodeId = fromMaybe curNodeId nodeId_maybe
-  memVal <- fmap (IntMap.lookup i . nodeMemory . (IntMap.! nodeId)) $ lift $ gets nodes
-  case memVal of
+  Maybe NodeId
+  -- ^ Node you want to look on, leave 'Nothing' to set to current node
+  -> Int
+  -- ^ Address to read
+  -> Sim Dynamic
+readMemory nodeM addr = Sim $ do
+  node    <- fmap (`fromMaybe` nodeM) $ gets currentNode
+  nodeMem <- fmap (nodeMemory . (IM.! node)) $ gets nodes
+  case (IM.lookup addr nodeMem) of
     Just val -> return val
-    Nothing  -> error $ "Trying to read empty memory location: " ++ show i ++ " from Node: " ++ show (fromMaybe curNodeId nodeId_maybe)
+    Nothing  -> error $ "Trying to read empty memory location: " ++
+                        show addr ++ " from Node: " ++ show node
 
--- | Return the 'ComponentId' of the component that created the current component
+-- | Return the 'ComponentId' of the component that created the current
+-- component
 componentCreator ::
-  SimM ComponentId
-componentCreator = SimM $ do
-  nId <- lift $ gets currentNode
-  cId <- lift $ gets currentComponent
-  ns <- lift $ gets nodes
-  let ces       = (nodeComponents (ns IntMap.! nId))
-  let ce        = ces IntMap.! cId
+  Sim ComponentId
+componentCreator = Sim $ do
+  nId <- gets currentNode
+  cId <- gets currentComponent
+  ns  <- gets nodes
+  let ces       = (nodeComponents (ns IM.! nId))
+  let ce        = ces IM.! cId
   let ceCreator = creator ce
   return ceCreator
 
 -- | Get the unique 'ComponentId' of a certain component
 componentLookup ::
-  Maybe NodeId                -- ^ Node you want to look on, leave 'Nothing' to set to current node
-  -> ComponentName            -- ^ Name of the component you are looking for
-  -> SimM (Maybe ComponentId) -- ^ 'Just' 'ComponentID' if the component is found, 'Nothing' otherwise
-componentLookup nodeId_maybe cName = SimM $ do
-  curNodeId <- lift $ gets currentNode
-  let nId   = fromMaybe curNodeId nodeId_maybe
-  nsLookup  <- fmap (nodeComponentLookup . (IntMap.! nId)) $ lift $ gets nodes
-  return $ Map.lookup cName nsLookup
-
-runIO ::
-  IO a
-  -> SimM a
-runIO = SimM . liftIO
+  ComponentInterface iface
+  => Maybe NodeId
+  -- ^ Node you want to look on, leave 'Nothing' to set to current node
+  -> iface
+  -- ^ Interface type of the component you are looking for
+  -> Sim (Maybe ComponentId)
+  -- ^ 'Just' 'ComponentID' if the component is found, 'Nothing' otherwise
+componentLookup nodeM iface = Sim $ do
+  node    <- fmap (`fromMaybe` nodeM) $ gets currentNode
+  idCache <- fmap (nodeComponentLookup . (IM.! node)) $ lift $ gets nodes
+  return $ Map.lookup (componentName iface) idCache
 
 traceMsg ::
   String
-  -> SimM ()
-traceMsg msg = SimM $ do
-  curNodeId <- lift $ gets currentNode
-  curCompId <- lift $ gets currentComponent
-  lift $ modifyNode curNodeId (updateTraceBuffer curCompId msg)
+  -> Sim ()
+traceMsg msg = Sim $ do
+  node <- gets currentNode
+  comp <- gets currentComponent
+  lift $ modifyNode node (updateTraceBuffer comp msg)
