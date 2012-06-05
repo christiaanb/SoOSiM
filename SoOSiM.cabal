@@ -28,9 +28,7 @@ Cabal-version:       >=1.6
 Library
   HS-Source-Dirs:   src
 
-  Exposed-modules:  SoOSiM,
-                    SoOSiM.Simulator,
-                    SoOSiM.Types
+  Exposed-modules:  SoOSiM
 
   ghc-options:      -O2 -Wall
 
@@ -42,7 +40,9 @@ Library
                     stm               >= 2.3     && < 2.4,
                     transformers      >= 0.2.2.0 && < 2.3
 
-  Other-modules:    SoOSiM.SimMonad,
+  Other-modules:    SoOSiM.Simulator,
+                    SoOSiM.Types,
+                    SoOSiM.SimMonad,
                     SoOSiM.Util
 
 source-repository head
