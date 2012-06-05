@@ -1,12 +1,7 @@
-module SoOSiM.Util
-  ( module SoOSiM.Util
-  , module Data.Dynamic
-  )
-where
+module SoOSiM.Util where
 
-import Data.Dynamic
-import Data.IntMap
-import Data.Monoid
+import Data.IntMap (IntMap,Key,member,adjust,insert)
+import Data.Monoid (Monoid (..))
 
 class MonadUnique m where
   getUniqueM :: m Int

@@ -7,16 +7,15 @@
 {-# LANGUAGE TypeSynonymInstances       #-}
 module SoOSiM.Types where
 
-import           Control.Concurrent.STM
-import           Control.Concurrent.Supply
-import           Control.Monad.Coroutine
-import qualified Control.Monad.State as State
-import           Control.Monad.Trans.Class ()
-import           Data.Dynamic
-import           Data.IntMap
-import           Data.Map
+import           Control.Concurrent.STM     (TVar)
+import           Control.Concurrent.Supply  (Supply,freshId)
+import           Control.Monad.Coroutine    (Coroutine)
+import qualified Control.Monad.State        as State
+import           Data.Dynamic               (Dynamic)
+import           Data.IntMap                (IntMap)
+import           Data.Map                   (Map)
 
-import SoOSiM.Util
+import           SoOSiM.Util                (MonadUnique(..))
 
 type Unique        = Int
 type ComponentId   = Unique
@@ -161,8 +160,7 @@ data SimState
   }
 
 instance MonadUnique SimMonad where
-  --getUniqueSupplyM = gets uniqueSupply
-  getUniqueM       = do
+  getUniqueM = do
     supply <- State.gets uniqueSupply
     let (unique,supply') = freshId supply
     State.modify (\s -> s {uniqueSupply = supply'})
