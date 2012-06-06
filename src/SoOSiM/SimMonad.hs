@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module SoOSiM.SimMonad where
 
-import           Control.Concurrent.STM  (newTVar,readTVar,writeTVar)
+import           Control.Concurrent.STM  (STM,newTVar,readTVar,writeTVar)
 import           Control.Monad.Coroutine (suspend)
 import           Control.Monad.State     (gets,lift,modify)
 import           Data.Dynamic            (Dynamic,Typeable,toDyn)
@@ -226,3 +226,8 @@ traceMsg msg = Sim $ do
   node <- gets currentNode
   comp <- gets currentComponent
   lift $ modifyNode node (updateTraceBuffer comp msg)
+
+runSTM ::
+  STM a
+  -> Sim a
+runSTM = Sim . lift . lift
