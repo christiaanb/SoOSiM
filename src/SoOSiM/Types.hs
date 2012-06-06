@@ -91,6 +91,10 @@ data Input a
 
 newtype ReturnAddress = RA { unRA :: (ComponentId, TVar Dynamic) }
 
+instance Show (Input a) where
+  show (Message _ (RA (sender,_))) = "Mesage from: " ++ show sender
+  show Tick                        = "Tick"
+
 type NodeId   = Unique
 -- | Meta-data describing the functionaly of the computing node, currently
 -- just a singleton type.
