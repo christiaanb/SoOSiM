@@ -4,25 +4,26 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Expr.SoOSSemantics where
 
+import Control.Concurrent.STM
 import Control.Monad.Trans
 import Control.Monad.State
-import Data.IORef
 import Data.Maybe
 import SoOSiM
 
 import Expr.Syntax
+import MemoryManager
 import MemoryManager.Types
 
 type family Sem (m :: * -> *) a :: *
 type instance Sem m IntT = Int
 type instance Sem m BoolT = Bool
 type instance Sem m UnitT = ()
-type instance Sem m (Ref a) = IORef (Int, Sem m a)
+type instance Sem m (Ref a) = TVar (Int, Sem m a)
 type instance Sem m (a :-> b) = m (Sem m a) -> m (Sem m b)
 
 newtype S m a = S { unS :: m (Sem m a) }
 
-type SState = StateT Int SimM
+type SState = StateT Int Sim
 
 liftS f =
     \x -> S $ do
@@ -37,14 +38,14 @@ liftS2 f =
 
 share :: SState a -> SState (SState a)
 share m = do
-  r <- lift $ runIO $ newIORef (False,m)
+  r <- lift $ runSTM $ newTVar (False,m)
   let ac = do
-            (f,m) <- lift $ runIO $ readIORef r
+            (f,m) <- lift $ runSTM $ readTVar r
             if f
               then m
               else do
                 v <- m
-                lift $ runIO $ writeIORef r (True, return v)
+                lift $ runSTM $ writeTVar r (True, return v)
                 return v
   return ac
 
@@ -72,33 +73,30 @@ instance EDSL (S SState) where
                   modify (+1)
                   lift $ traceMsg ("Creating reference: " ++ show i)
                   a <- unS x
-                  memManagerId <- fmap fromJust $ lift $ componentLookup Nothing "MemoryManager"
-                  lift $ invokeAsync Nothing memManagerId
-                           (marshall (Register i (i+1) Nothing))
-                           ignore
-                  lift $ invokeAsync Nothing memManagerId
-                           (marshall (Write i ()))
-                           ignore
-                  lift $ runIO (newIORef (i,a))
+                  memManagerId <- fmap fromJust $ lift $ componentLookup Nothing MemoryManager
+                  lift $ invokeAsync MemoryManager Nothing memManagerId
+                           (Register i (i+1) Nothing) ignore
+                  lift $ invokeAsync MemoryManager Nothing memManagerId
+                           (Write i ()) ignore
+                  lift $ runSTM (newTVar (i,a))
 
   deref x      = S $ do
                   a <- unS x
-                  (i,a') <- lift $ runIO (readIORef a)
-                  memManagerId <- fmap fromJust $ lift $ componentLookup Nothing "MemoryManager"
+                  (i,a') <- lift $ runSTM (readTVar a)
+                  memManagerId <- fmap fromJust $ lift $ componentLookup Nothing MemoryManager
                   lift $ traceMsg ("Dereferencing: " ++ show i)
-                  () <- fmap unmarshall $ lift $ invoke Nothing memManagerId
-                                                   (marshall (Read i))
+                  () <- fmap (unmarshall "deref") $ lift $
+                          invoke MemoryManager Nothing memManagerId (Read i)
                   return a'
 
   update x y   = S $ do
                   a <- unS x
                   b <- unS y
-                  (i,_) <- lift $ runIO (readIORef a)
+                  (i,_) <- lift $ runSTM (readTVar a)
                   lift $ traceMsg ("Updating: " ++ show i)
-                  lift $ runIO (modifyIORef a (\(i,_) -> (i,b)))
-                  memManagerId <- fmap fromJust $ lift $ componentLookup Nothing "MemoryManager"
-                  lift $ invokeAsync Nothing memManagerId
-                           (marshall (Write i ()))
-                           ignore
+                  lift $ runSTM (modifyTVar a (\(i,_) -> (i,b)))
+                  memManagerId <- fmap fromJust $ lift $ componentLookup Nothing MemoryManager
+                  lift $ invokeAsync MemoryManager Nothing memManagerId
+                           (Write i ()) ignore
 
 runExpr = runStateT . unS

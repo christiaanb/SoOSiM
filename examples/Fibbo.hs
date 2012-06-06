@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE TypeFamilies              #-}
 module Fibbo where
 
 import SoOSiM
@@ -25,18 +26,21 @@ fibbo = fix $ \fib ->
 fibbo5 :: EDSL exp => exp IntT
 fibbo5 = fibbo $$ 5
 
-newtype FS = FS Int
-
 fibbo5Component ::
-  FS
-  -> ComponentInput
-  -> SimM FS
-fibbo5Component (FS s) Initialize = do
+  Int
+  -> Input ()
+  -> Sim Int
+fibbo5Component s (Message () _) = do
   (a,s') <- runExpr fibbo5 s
   traceMsg ("Result: " ++ show a)
-  yield (FS s')
+  yield s'
 
-instance ComponentIface FS where
-  initState          = FS 0
-  componentName _    = "Fibbo5"
-  componentBehaviour = fibbo5Component
+data Fibbo = Fibbo
+
+instance ComponentInterface Fibbo where
+  type State Fibbo     = Int
+  type Receive Fibbo   = ()
+  type Send Fibbo      = ()
+  initState _          = 0
+  componentName _      = "Fibbo5"
+  componentBehaviour _ = fibbo5Component
