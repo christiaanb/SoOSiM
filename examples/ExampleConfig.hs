@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 module ExampleConfig where
 
 import           Control.Concurrent.Supply
@@ -23,14 +24,18 @@ main = do
     supply <- newSupply
     let (node0id,supply')       = freshId supply
     let (component0id,supply'') = freshId supply'
-    statusTV <- newTVarIO Running
-    stateTV  <- newTVarIO Initializer
-    bufferTV <- newTVarIO [Initialize]
+    statusTV <- newTVarIO ReadyToRun
+    stateTV  <- newTVarIO ()
+    bufferTV <- newTVarIO [Tick]
     let emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
     emptyMetaTV   <- newTVarIO emptyMeta
-    let component0CC             = CC component0id statusTV stateTV component0id bufferTV [] emptyMetaTV
-    let node0                    = Node node0id NodeInfo Map.empty (IM.fromList [(component0id,component0CC)]) IM.empty [component0id]
-    let simState                 = SimState node0id component0id (IM.fromList [(node0id,node0)]) supply'' Map.empty
+    let component0CC = CC Initializer component0id component0id statusTV
+                        stateTV bufferTV [] emptyMetaTV
+    let node0 = Node node0id NodeInfo Map.empty
+                  (IM.fromList [(component0id,component0CC)])
+                  IM.empty [component0id]
+    let simState = SimState node0id component0id
+                    (IM.fromList [(node0id,node0)]) supply''
     loop 0 simState
     return ()
   where
@@ -50,32 +55,32 @@ main = do
 data Initializer = Initializer
 
 initializer ::
-  Initializer
-  -> ComponentInput
-  -> SimM Initializer
-initializer s Initialize = do
+  ()
+  -> Input ()
+  -> Sim ()
+initializer s Tick = do
   nId <- getNodeId
-  registerComponent (initState :: MemState)
-  registerComponent (initState :: HMState)
-  registerComponent (initState :: SchedulerState)
-  _ <- createComponent (Just nId) Nothing "MemoryManager"
-  _ <- createComponent (Just nId) Nothing "Scheduler"
-  hmId <- createComponent (Just nId) Nothing "HeatMap"
-  invokeAsync Nothing hmId (marshall Compute) ignore
+  _ <- createComponent (Just nId) Nothing MemoryManager
+  _ <- createComponent (Just nId) Nothing Scheduler
+  hmId <- createComponent (Just nId) Nothing HeatMap
+  invokeAsync HeatMap Nothing hmId Compute ignore
   yield s
 
 initializer s _ = yield s
 
-instance ComponentIface Initializer where
-  initState          = Initializer
-  componentName _    = "Initializer"
-  componentBehaviour = initializer
+instance ComponentInterface Initializer where
+  type Receive Initializer = ()
+  type Send Initializer    = ()
+  type State Initializer   = ()
+  initState _          = ()
+  componentName _      = "Initializer"
+  componentBehaviour _ = initializer
 
 class ShowIO a where
   showIO :: a -> IO Doc
 
 instance ShowIO SimState where
-  showIO (SimState _ _ nodes _ _) = do
+  showIO (SimState _ _ nodes _) = do
     let ns = IM.elems nodes
     showIO ns
 
@@ -91,13 +96,12 @@ instance ShowIO Node where
     return retval
 
 instance ShowIO ComponentContext where
-  showIO (CC cId statusTV stateTV _ bufferTV traceMsgs mdataTV) = do
+  showIO (CC iface cId _ statusTV _ bufferTV traceMsgs mdataTV) = do
     status  <- (readTVarIO statusTV) >>= showIO
-    state   <- readTVarIO stateTV
     buffer  <- (readTVarIO bufferTV) >>= showIO
     mdata   <- (readTVarIO mdataTV) >>= showIO
     let traceMsgsDoc = foldl ($$) empty $ map text traceMsgs
-    let retval = text (componentName state) <+> parens (text "id" <> colon <+> text (show cId)) <> colon <+> status $+$ (nest 2 (text "Pending events" <> colon <+> brackets (buffer))) $+$ (nest 2 (text "traceMsgs" <> colon <+> traceMsgsDoc)) $+$ (nest 2 mdata)
+    let retval = text (componentName iface) <+> parens (text "id" <> colon <+> text (show cId)) <> colon <+> status $+$ (nest 2 (text "Pending events" <> colon <+> brackets (buffer))) $+$ (nest 2 (text "traceMsgs" <> colon <+> traceMsgsDoc)) $+$ (nest 2 mdata)
     return retval
 
 instance ShowIO SimMetaData where
@@ -114,9 +118,9 @@ instance ShowIO SimMetaData where
     return retval
 
 instance ShowIO (ComponentStatus s) where
-  showIO Idle                  = return $ text "Idle"
-  showIO Running               = return $ text "Running"
-  showIO (WaitingForMsg cId _) = return $ text "Waiting for" <> colon <+> text (show cId)
+  showIO ReadyToIdle        = return $ text "Idle"
+  showIO ReadyToRun         = return $ text "Running"
+  showIO (WaitingFor cId _) = return $ text "Waiting for" <> colon <+> text (show cId)
 
-instance ShowIO ComponentInput where
+instance ShowIO (Input a) where
   showIO = return . text . show
