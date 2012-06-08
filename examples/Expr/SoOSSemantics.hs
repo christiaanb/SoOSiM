@@ -73,20 +73,20 @@ instance EDSL (S SState) where
                   modify (+1)
                   lift $ traceMsg ("Creating reference: " ++ show i)
                   a <- unS x
-                  memManagerId <- fmap fromJust $ lift $ componentLookup Nothing MemoryManager
-                  lift $ invokeAsync MemoryManager Nothing memManagerId
+                  memManagerId <- fmap fromJust $ lift $ componentLookup  MemoryManager
+                  lift $ invokeAsync MemoryManager memManagerId
                            (Register i (i+1) Nothing) ignore
-                  lift $ invokeAsync MemoryManager Nothing memManagerId
+                  lift $ invokeAsync MemoryManager memManagerId
                            (Write i ()) ignore
                   lift $ runSTM (newTVar (i,a))
 
   deref x      = S $ do
                   a <- unS x
                   (i,a') <- lift $ runSTM (readTVar a)
-                  memManagerId <- fmap fromJust $ lift $ componentLookup Nothing MemoryManager
+                  memManagerId <- fmap fromJust $ lift $ componentLookup  MemoryManager
                   lift $ traceMsg ("Dereferencing: " ++ show i)
                   () <- fmap (unmarshall "deref") $ lift $
-                          invoke MemoryManager Nothing memManagerId (Read i)
+                          invoke MemoryManager memManagerId (Read i)
                   return a'
 
   update x y   = S $ do
@@ -95,8 +95,8 @@ instance EDSL (S SState) where
                   (i,_) <- lift $ runSTM (readTVar a)
                   lift $ traceMsg ("Updating: " ++ show i)
                   lift $ runSTM (modifyTVar a (\(i,_) -> (i,b)))
-                  memManagerId <- fmap fromJust $ lift $ componentLookup Nothing MemoryManager
-                  lift $ invokeAsync MemoryManager Nothing memManagerId
+                  memManagerId <- fmap fromJust $ lift $ componentLookup  MemoryManager
+                  lift $ invokeAsync MemoryManager memManagerId
                            (Write i ()) ignore
 
 runExpr = runStateT . unS

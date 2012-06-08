@@ -59,11 +59,10 @@ initializer ::
   -> Input ()
   -> Sim ()
 initializer s Tick = do
-  nId <- getNodeId
-  _ <- createComponent (Just nId) Nothing MemoryManager
-  _ <- createComponent (Just nId) Nothing Scheduler
-  hmId <- createComponent (Just nId) Nothing HeatMap
-  invokeAsync HeatMap Nothing hmId Compute ignore
+  _ <- createComponent MemoryManager
+  _ <- createComponent Scheduler
+  hmId <- createComponent HeatMap
+  invokeAsync HeatMap hmId Compute ignore
   yield s
 
 initializer s _ = yield s

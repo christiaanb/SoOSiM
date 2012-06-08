@@ -31,27 +31,27 @@ heatMapApplication hmState (Message Compute retAddr) = do
   let wlocs = [ dimTrans w h x (0,0) + (w*h) | x <- [0..(w*h)-1]]
 
   -- zero-out memory
-  memManagerId <- fmap fromJust $ componentLookup Nothing MemoryManager
-  invokeAsync MemoryManager Nothing memManagerId
+  memManagerId <- fmap fromJust $ componentLookup MemoryManager
+  invokeAsync MemoryManager memManagerId
     (Register 0 (2 * w * h) Nothing) ignore
-  mapM_ (\wloc -> invokeAsync MemoryManager Nothing memManagerId
+  mapM_ (\wloc -> invokeAsync MemoryManager memManagerId
                     (Write wloc (0::Float)) ignore
         ) [0..(2*w*h-1)]
 
   -- Set every 3rd location to 1
-  mapM_ (\wloc -> invokeAsync MemoryManager Nothing memManagerId
+  mapM_ (\wloc -> invokeAsync MemoryManager memManagerId
                     (Write wloc (1::Float)) ignore
         ) [ x | x <- [0..(2*w*h-1)], x `mod` 4 == 0]
 
   -- Instantiate worker threads
-  schedulerId <- fmap fromJust $ componentLookup Nothing Scheduler
+  schedulerId <- fmap fromJust $ componentLookup Scheduler
   workerIDs <- mapM (\(wloc,rloc) -> do
-                        workerID <- invoke Scheduler Nothing schedulerId
+                        workerID <- invoke Scheduler schedulerId
                                       (Execute HeatMapWorker
                                         [Register 0 (2 * w * h)
                                           (Just memManagerId)
                                         ])
-                        invokeAsync HeatMapWorker Nothing workerID
+                        invokeAsync HeatMapWorker workerID
                           (HeatMap.NewState
                             (HMWorker wloc rloc (transfer hmState)))
                           ignore
@@ -60,7 +60,7 @@ heatMapApplication hmState (Message Compute retAddr) = do
 
   -- Make the worker threads do actual work
   let workers' = IM.fromList (zip workerIDs (repeat Compute))
-  mapM_ (\x -> invokeAsync HeatMapWorker Nothing x Compute ignore) workerIDs
+  mapM_ (\x -> invokeAsync HeatMapWorker x Compute ignore) workerIDs
 
   yield $ hmState {workers = workers'}
 
@@ -77,14 +77,14 @@ heatMapApplication hmState (Message Done retAddr) = do
       let wlocs = [ dimTrans w h x (0,0) | x <- [0..(w*h)-1]]
 
       -- locate memory managers
-      memManagerId <- fmap fromJust $ componentLookup Nothing MemoryManager
+      memManagerId <- fmap fromJust $ componentLookup MemoryManager
 
       -- Copy values from 1 array to the other
       (rVals :: [Float]) <- mapM (\x -> fmap (unmarshall "rVals") $
-                                          invoke MemoryManager Nothing
+                                          invoke MemoryManager
                                             memManagerId (Read x)
                                  ) rlocs
-      zipWithM_ (\x v -> invokeAsync MemoryManager Nothing memManagerId
+      zipWithM_ (\x v -> invokeAsync MemoryManager memManagerId
                           (Write x v) ignore
                 ) wlocs rVals
 
@@ -92,7 +92,7 @@ heatMapApplication hmState (Message Done retAddr) = do
 
       -- Restart all workers to run next iteration
       let workerIDs = IM.keys . workers $ hmState
-      mapM_ (\x -> invokeAsync HeatMapWorker Nothing x
+      mapM_ (\x -> invokeAsync HeatMapWorker x
                      Compute ignore
             ) workerIDs
 
@@ -100,7 +100,7 @@ heatMapApplication hmState (Message Done retAddr) = do
     else do -- Still waiting for some workers
       yield $ hmState { workers = workers' }
 
-heatMapApplication hmState _ = return hmState
+heatMapApplication hmState _ = yield hmState
 
 heatMapWorker :: HMWorker -> Input HMMsg -> Sim HMWorker
 heatMapWorker hmwState (Message (HeatMap.NewState s') _) =
@@ -112,16 +112,16 @@ heatMapWorker hmwState (Message Compute _) = do
   let (dy2i,dx2i,dt) = wtransfer hmwState
 
   -- Locate memory manager
-  memManagerId <- fmap fromJust $ componentLookup Nothing MemoryManager
+  memManagerId <- fmap fromJust $ componentLookup MemoryManager
 
   -- Read array values
-  cVal    <- fmap (unmarshall "cval") $ invoke MemoryManager Nothing
+  cVal    <- fmap (unmarshall "cval") $ invoke MemoryManager
                                           memManagerId (Read c)
   vertVal <- mapM (\x -> fmap (unmarshall "vertVall") $ invoke MemoryManager
-                            Nothing memManagerId (Read x)
+                            memManagerId (Read x)
                    ) vert
   horVal  <- mapM (\x -> fmap (unmarshall "horVal") $ invoke MemoryManager
-                            Nothing memManagerId (Read x)
+                            memManagerId (Read x)
                   ) hor
 
   -- Calculate value
@@ -130,16 +130,16 @@ heatMapWorker hmwState (Message Compute _) = do
   let newVal = (newValV + newValH) * dt
 
   -- Write array value
-  invokeAsync MemoryManager Nothing memManagerId
+  invokeAsync MemoryManager memManagerId
     (Write (wrLoc hmwState) newVal) ignore
 
   -- Notify creator that we're finished
   creator <- componentCreator
-  invokeAsync HeatMap Nothing creator Done ignore
+  invokeAsync HeatMap creator Done ignore
 
   yield hmwState
 
-heatMapWorker hmwState _ = return hmwState
+heatMapWorker hmwState _ = yield hmwState
 
 data HeatMap       = HeatMap
 data HeatMapWorker = HeatMapWorker

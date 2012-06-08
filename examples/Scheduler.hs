@@ -14,11 +14,11 @@ scheduler ::
   -> Sim SchedulerState
 scheduler schedState (Message (Execute iface memCommands) retAddr) = do
   nodeId    <- createNode
-  memCompId <- createComponent (Just nodeId) Nothing MemoryManager
-  mapM_ (\c -> invokeAsync MemoryManager Nothing memCompId c ignore)
+  memCompId <- createComponentN MemoryManager nodeId
+  mapM_ (\c -> invokeAsync MemoryManager memCompId c ignore)
     memCommands
-  compId    <- createComponent (Just nodeId) (Just $ returnAddress retAddr) iface
-  respond Scheduler Nothing retAddr compId
+  compId    <- createComponentNP (Just nodeId) (Just $ returnAddress retAddr) iface
+  respond Scheduler retAddr compId
   yield schedState
 
 scheduler schedState _ = yield schedState

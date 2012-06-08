@@ -18,12 +18,12 @@ memoryManager s (Message content retAddr)
     let src = checkAddress (addressLookup s) addr
     case (sourceId src) of
       Nothing -> do
-        addrVal <- readMemory Nothing addr
-        respond MemoryManager Nothing retAddr addrVal
+        addrVal <- readMemory addr
+        respond MemoryManager retAddr addrVal
         yield s
       Just remote -> do
-        response <- invoke MemoryManager Nothing remote content
-        respond MemoryManager Nothing retAddr response
+        response <- invoke MemoryManager remote content
+        respond MemoryManager retAddr response
         yield s
 
   | (Write addr val) <- content
@@ -31,10 +31,10 @@ memoryManager s (Message content retAddr)
     let src = checkAddress (addressLookup s) addr
     case (sourceId src) of
       Nothing -> do
-        addrVal <- writeMemory Nothing addr val
+        addrVal <- writeMemory addr val
         yield s
       Just remote -> do
-        invokeAsync MemoryManager Nothing remote content ignore
+        invokeAsync MemoryManager remote content ignore
         yield s
 
 memoryManager s _ = yield s
