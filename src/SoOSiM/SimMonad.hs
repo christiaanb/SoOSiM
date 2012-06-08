@@ -18,6 +18,25 @@ import SoOSiM.Util
 -- | Create a new component
 createComponent ::
   (ComponentInterface iface, Typeable (Receive iface))
+  => iface
+  -- ^ Component Interface
+  -> Sim ComponentId
+  -- ^ 'ComponentId of the create component'
+createComponent = createComponentNP Nothing Nothing
+
+-- | Create a new component
+createComponentN ::
+  (ComponentInterface iface, Typeable (Receive iface))
+  => iface
+  -- ^ Component Interface
+  -> NodeId
+  -- Node to create component on
+  -> Sim ComponentId
+createComponentN iface nId = createComponentNP (Just nId) Nothing iface
+
+-- | Create a new component
+createComponentNP ::
+  (ComponentInterface iface, Typeable (Receive iface))
   => Maybe NodeId
   -- ^ Node to create component on, leave to 'Nothing' to create on current
   -- node
@@ -27,7 +46,7 @@ createComponent ::
   -- ^ Component Interface
   -> Sim ComponentId
   -- ^ 'ComponentId' of the created component
-createComponent nodeIdM parentIdM iface = Sim $ do
+createComponentNP nodeIdM parentIdM iface = Sim $ do
     nodeId    <- fmap (`fromMaybe` nodeIdM) $ gets currentNode
     parentId  <- fmap (`fromMaybe` parentIdM) $ gets currentComponent
     compId    <- getUniqueM
@@ -53,6 +72,19 @@ createComponent nodeIdM parentIdM iface = Sim $ do
 
 -- | Synchronously invoke another component
 invoke ::
+  (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface))
+  => iface
+  -- ^ Interface type
+  -> ComponentId
+  -- ^ ComponentId of callee
+  -> Receive iface
+  -- ^ Argument
+  -> Sim (Send iface)
+  -- ^ Response from callee
+invoke iface recipient content = invokeS iface Nothing recipient content
+
+-- | Synchronously invoke another component
+invokeS ::
   forall iface
   . (ComponentInterface iface
     , Typeable (Receive iface)
@@ -67,7 +99,7 @@ invoke ::
   -- ^ Argument
   -> Sim (Send iface)
   -- ^ Response from recipient
-invoke _ senderM recipient content = Sim $ do
+invokeS _ senderM recipient content = Sim $ do
   sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
   responseTV   <- lift . lift . newTVar $ toDyn (undefined :: Send iface)
   let response = RA (sender,responseTV)
@@ -83,6 +115,22 @@ invoke _ senderM recipient content = Sim $ do
 
 -- | Invoke another component, handle response asynchronously
 invokeAsync ::
+  (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface))
+  => iface
+  -- ^ Interface type
+  -> ComponentId
+  -- ^ ComponentId of callee
+  -> Receive iface
+  -- ^ Argument
+  -> (Send iface -> Sim ())
+  -- ^ Response Handler
+  -> Sim ()
+  -- ^ Call returns immediately
+invokeAsync iface recipient content handler =
+  invokeAsyncS iface Nothing recipient content handler
+
+-- | Invoke another component, handle response asynchronously
+invokeAsyncS ::
   forall iface
   . (ComponentInterface iface
     , Typeable (Receive iface)
@@ -99,7 +147,7 @@ invokeAsync ::
   -- ^ Handler
   -> Sim ()
   -- ^ Call returns immediately
-invokeAsync _ senderM recipient content _ = Sim $ do
+invokeAsyncS _ senderM recipient content _ = Sim $ do
   sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
   responseTV   <- lift . lift . newTVar $ toDyn (undefined :: Send iface)
   let response = RA (sender,responseTV)
@@ -110,22 +158,35 @@ invokeAsync _ senderM recipient content _ = Sim $ do
   lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
   lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
 
--- | Respond to another component
+-- | Respond to an invocation
 respond ::
+  (ComponentInterface iface, Typeable (Send iface))
+  => iface
+  -- ^ Interface type
+  -> ReturnAddress
+  -- ^ Return address to send response to
+  -> (Send iface)
+  -- ^ Value to send as response
+  -> Sim ()
+  -- ^ Call returns immediately
+respond iface retAddr content = respondS iface Nothing retAddr content
+
+-- | Respond to an invocation
+respondS ::
   forall iface
   . ( ComponentInterface iface
     , Typeable (Send iface))
   => iface
   -- ^ Interface type
   -> Maybe ComponentId
-  -- ^ Caller, leave 'Nothing' to set to current module
+  -- ^ Callee Id, leave 'Nothing' to set to current module
   -> ReturnAddress
   -- ^ Return address
   -> (Send iface)
-  -- ^ Argument
+  -- ^ Value to send as response
   -> Sim ()
   -- ^ Call returns immediately
-respond _ senderM (RA (recipient,respTV)) content = Sim $ do
+respondS _ senderM (RA (recipient,respTV)) content = Sim $ do
   sender <- fmap (`fromMaybe` senderM) $ gets currentComponent
   lift . lift $ writeTVar respTV (toDyn content)
 
@@ -205,16 +266,26 @@ componentCreator = Sim $ do
   let ceCreator = creator ce
   return ceCreator
 
--- | Get the unique 'ComponentId' of a certain component
+-- | Get the unique 'ComponentId' of a component implementing an interface
 componentLookup ::
+  ComponentInterface iface
+  => iface
+  -- ^ Interface type of the component you are looking for
+  -> Sim (Maybe ComponentId)
+  -- ^ 'Just' 'ComponentID' if a component is found, 'Nothing' otherwise
+componentLookup = componentLookupN Nothing
+
+
+-- | Get the unique 'ComponentId' of a component implementing an interface
+componentLookupN ::
   ComponentInterface iface
   => Maybe NodeId
   -- ^ Node you want to look on, leave 'Nothing' to set to current node
   -> iface
   -- ^ Interface type of the component you are looking for
   -> Sim (Maybe ComponentId)
-  -- ^ 'Just' 'ComponentID' if the component is found, 'Nothing' otherwise
-componentLookup nodeM iface = Sim $ do
+  -- ^ 'Just' 'ComponentID' if a component is found, 'Nothing' otherwise
+componentLookupN nodeM iface = Sim $ do
   node    <- fmap (`fromMaybe` nodeM) $ gets currentNode
   idCache <- fmap (nodeComponentLookup . (IM.! node)) $ lift $ gets nodes
   return $ Map.lookup (componentName iface) idCache
