@@ -224,6 +224,16 @@ createNode = Sim $ do
 -- | Write memory of local node
 writeMemory ::
   Typeable a
+  => Int
+  -- ^ Address to write
+  -> a
+  -- ^ Value to write
+  -> Sim ()
+writeMemory = writeMemoryN Nothing
+
+-- | Write memory of local node
+writeMemoryN ::
+  Typeable a
   => Maybe NodeId
   -- ^ Node you want to write on, leave 'Nothing' to set to current node
   -> Int
@@ -231,7 +241,7 @@ writeMemory ::
   -> a
   -- ^ Value to write
   -> Sim ()
-writeMemory nodeM addr val = Sim $ do
+writeMemoryN nodeM addr val = Sim $ do
     node <- fmap (`fromMaybe` nodeM) $ gets currentNode
     lift $ modifyNode node writeVal
   where
@@ -240,12 +250,19 @@ writeMemory nodeM addr val = Sim $ do
 
 -- | Read memory of local node
 readMemory ::
+  Int
+  -- ^ Address to read
+  -> Sim Dynamic
+readMemory = readMemoryN Nothing
+
+-- | Read memory of local node
+readMemoryN ::
   Maybe NodeId
   -- ^ Node you want to look on, leave 'Nothing' to set to current node
   -> Int
   -- ^ Address to read
   -> Sim Dynamic
-readMemory nodeM addr = Sim $ do
+readMemoryN nodeM addr = Sim $ do
   node    <- fmap (`fromMaybe` nodeM) $ gets currentNode
   nodeMem <- fmap (nodeMemory . (IM.! node)) $ gets nodes
   case (IM.lookup addr nodeMem) of
