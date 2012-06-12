@@ -24,11 +24,11 @@ import MemoryManager.Types
 import MemoryManager.Util
 
 memoryManager :: MemState -> Input MemCommand -> Sim MemState
-memoryManager s (Message (Register addr sc src) _)
-  = yield $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
+memoryManager s (Message content retAddr) = case content of
+  (Register memorySource) -> do
+    yield $ s {addressLookup = memorySource:(addressLookup s)}
 
-memoryManager s (Message content@(Read addr) retAddr)
-  = do
+  (Read addr) -> do
     let src = checkAddress (addressLookup s) addr
     case (sourceId src) of
       Nothing -> do
@@ -40,8 +40,7 @@ memoryManager s (Message content@(Read addr) retAddr)
         respond MemoryManager retAddr response
         yield s
 
-memoryManager s (Message content@(Write addr val) _)
-  = do
+  (Write addr val) -> do
     let src = checkAddress (addressLookup s) addr
     case (sourceId src) of
       Nothing -> do
@@ -159,8 +158,8 @@ We now start defining the actual behaviour of our memory manager, starting with 
 memoryManager :: MemState -> Input MemCommand -> Sim MemState
 ```
 
-The type defition tells us that the first argument has the type of our internal component state, and the second argument a value of type `ComponentInput`.
-The possible values of this type are enumarated in the *OS Component API* section.
+The type defition tells us that the first argument has the type of our internal component state, and the second argument a value of type `Input a`, where the `a` is instantiate to the `MemCommand` datatype.
+The possible values of the `Input a` type are enumarated in the *OS Component API* section.
 The value of the result is of type `Sim MemState`.
 This tells us two things:
 
@@ -178,11 +177,11 @@ The result that you must ultimately return is the, potentially updated, internal
 We now turn to the first line of the actual function definition:
 
 ```haskell
-memoryManager s (ComponentMsg senderId msgContent) = do
+memoryManager s (Message content retAddr) = case content of
 ```
 
 Where `memoryManager` is the name of the function, `s` the first argument (of type `MemState`).
-We pattern-match on the second argument, meaning this function definition clause only works for values whose constructor is `ComponentMsg`.
+We pattern-match on the second argument, meaning this function definition clause only works for values whose constructor is `Message`.
 By pattern matching we get access to the fields of the datatype, where we bind the names `senderId` and `msgContent` to the values of these fields.
 
 The `do` *keyword* after the `=` sign indicates that the function executes within a monadic environment, the `SimM` environment in our case.
@@ -208,19 +207,31 @@ The value returned by `identifyAddress` is of type `Maybe Int`, which can either
 Next we define a nested `Case` statement that contains most of the actual behaviour of our memory manager component:
 
 ```haskell
-  case addrMaybe of
-    Just addr ->
-      case (addr `elem` localAddress s) of
-        True ->
-          case (memCommand msgContent) of
-            Read _  -> do
-              addrVal <- readMemory addr
-              sendMessageAsync Nothing senderId addrVal
-              return s
-            Write _ val -> do
-              writeMemory addr (toDyn val)
-              sendMessageAsync Nothing senderId (toDyn True)
-              return s
+case content of
+  (Register memorySource) -> do
+    yield $ s {addressLookup = memorySource:(addressLookup s)}
+
+  (Read addr) -> do
+    let src = checkAddress (addressLookup s) addr
+    case (sourceId src) of
+      Nothing -> do
+        addrVal <- readMemory addr
+        respond MemoryManager retAddr addrVal
+        yield s
+      Just remote -> do
+        response <- invoke MemoryManager remote content
+        respond MemoryManager retAddr response
+        yield s
+
+  (Write addr val) -> do
+    let src = checkAddress (addressLookup s) addr
+    case (sourceId src) of
+      Nothing -> do
+        addrVal <- writeMemory addr val
+        yield s
+      Just remote -> do
+        invokeAsync MemoryManager remote content ignore
+        yield s
 ```
 
 First we check if an actual memory request was actually send to us, and bind the name `addr` to the value of the address in case it was.
