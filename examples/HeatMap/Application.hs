@@ -33,7 +33,7 @@ heatMapApplication hmState (Message Compute retAddr) = do
   -- zero-out memory
   memManagerId <- fmap fromJust $ componentLookup MemoryManager
   invokeAsync MemoryManager memManagerId
-    (Register 0 (2 * w * h) Nothing) ignore
+    (Register (MemorySource 0 (2 * w * h) Nothing)) ignore
   mapM_ (\wloc -> invokeAsync MemoryManager memManagerId
                     (Write wloc (0::Float)) ignore
         ) [0..(2*w*h-1)]
@@ -46,10 +46,12 @@ heatMapApplication hmState (Message Compute retAddr) = do
   -- Instantiate worker threads
   schedulerId <- fmap fromJust $ componentLookup Scheduler
   workerIDs <- mapM (\(wloc,rloc) -> do
+
                         workerID <- invoke Scheduler schedulerId
                                       (Execute HeatMapWorker
-                                        [Register 0 (2 * w * h)
-                                          (Just memManagerId)
+                                        [Register
+                                          (MemorySource 0 (2 * w * h)
+                                          (Just memManagerId))
                                         ])
                         invokeAsync HeatMapWorker workerID
                           (HeatMap.NewState
