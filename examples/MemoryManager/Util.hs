@@ -1,8 +1,5 @@
 module MemoryManager.Util where
 
-import Data.Maybe
-import SoOSiM
-
 import MemoryManager.Types
 
 checkAddress ::

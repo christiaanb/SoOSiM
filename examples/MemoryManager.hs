@@ -1,19 +1,16 @@
 {-# LANGUAGE TypeFamilies #-}
 module MemoryManager where
 
-import Data.Dynamic
-import Data.IntMap
 import SoOSiM
 
 import MemoryManager.Types
 import MemoryManager.Util
 
 memoryManager :: MemState -> Input MemCommand -> Sim MemState
-memoryManager s (Message content retAddr)
-  | (Register addr sc src) <- content
+memoryManager s (Message (Register addr sc src) _)
   = yield $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
 
-  | (Read addr) <- content
+memoryManager s (Message content@(Read addr) retAddr)
   = do
     let src = checkAddress (addressLookup s) addr
     case (sourceId src) of
@@ -26,7 +23,7 @@ memoryManager s (Message content retAddr)
         respond MemoryManager retAddr response
         yield s
 
-  | (Write addr val) <- content
+memoryManager s (Message content@(Write addr val) _)
   = do
     let src = checkAddress (addressLookup s) addr
     case (sourceId src) of
@@ -40,9 +37,9 @@ memoryManager s (Message content retAddr)
 memoryManager s _ = yield s
 
 instance ComponentInterface MemoryManager where
-  type State MemoryManager   = MemState
+  type State   MemoryManager = MemState
   type Receive MemoryManager = MemCommand
-  type Send MemoryManager    = Dynamic
-  initState                  = const (MemState [])
-  componentName              = const "MemoryManager"
-  componentBehaviour         = const memoryManager
+  type Send    MemoryManager = Dynamic
+  initState _                = (MemState [])
+  componentName _            = "MemoryManager"
+  componentBehaviour _       = memoryManager
