@@ -129,7 +129,7 @@ import MemoryManager.Util
 The `SoOSiM` module defines all the simulator API functions.
 Besides the *external* module, we also import two *local* module called `MemoryManager.Types` and `MemoryManager.Util`, which we define in `./MemoryManager/Types.hs` and `./MemoryManager/Util.hs` respectively.
 
-We start our description with a datatype definition describing the internal state of our memory manager component:
+We start our description with a datatype definition describing the internal state of our memory manager component, and the datatype encoding the messages our memory manager will receive:
 
 ```haskell
 data MemorySource
@@ -142,11 +142,16 @@ data MemorySource
 data MemState =
   MemState { addressLookup :: [MemorySource]
            }
+
+data MemCommand = Register MemorySource
+                | Read     Int
+                | forall a . Typeable a => Write Int a
+  deriving Typeable
 ```
 
-We define a record datatype [1] that has two fields `localAddress` and `remoteAddress`.
-The first field is a dynamically sized list with elements of `Int`, which holds the address' for which our memory manager is responsible.
-The second field is an `IntMap` datastructure that maps address' to the *Component ID* of the memory manager that is responsible for those address'.
+We define two record datatypes [1]; and with three fields (`baseAddress`, `scope`, and `sourceId`) and another with one field (`addressLookup`).
+The first record type defines an address range (`baseAddress` and `scope`) and an indication which memory manager is responsisable for tht memory range.
+The second record type, which has only one field, which defines a dynamically-sized list of `MemorySource` elements.
 
 We now start defining the actual behaviour of our memory manager, starting with its type annotation:
 
@@ -162,7 +167,7 @@ This tells us two things:
 * The `memoryManager` function is exuted within the `Sim` monad.
 * The actual value that is returned is of type `MemState`.
 
-A *monad* is many wonderfully things [2], way too much to explain here, so for the rest of this README we see it as an execution environment.
+A *monad* is many wonderfull things [2], way too much to explain here, so for the rest of this README we see it as an execution environment.
 Only inside this execution environment will we have access to the SoOSiM API functions.
 
 Although we know the types of the arguments and the result of the function, we don't know their actual meaning.
