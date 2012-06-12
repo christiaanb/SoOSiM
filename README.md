@@ -24,31 +24,32 @@ import MemoryManager.Types
 import MemoryManager.Util
 
 memoryManager :: MemState -> Input MemCommand -> Sim MemState
-memoryManager s (Message content retAddr) = case content of
-  (Register memorySource) -> do
-    yield $ s {addressLookup = memorySource:(addressLookup s)}
+memoryManager s (Message content retAddr) = do
+  case content of
+    (Register memorySource) -> do
+      yield $ s {addressLookup = memorySource:(addressLookup s)}
 
-  (Read addr) -> do
-    let src = checkAddress (addressLookup s) addr
-    case (sourceId src) of
-      Nothing -> do
-        addrVal <- readMemory addr
-        respond MemoryManager retAddr addrVal
-        yield s
-      Just remote -> do
-        response <- invoke MemoryManager remote content
-        respond MemoryManager retAddr response
-        yield s
+    (Read addr) -> do
+      let src = checkAddress (addressLookup s) addr
+      case (sourceId src) of
+        Nothing -> do
+          addrVal <- readMemory addr
+          respond MemoryManager retAddr addrVal
+          yield s
+        Just remote -> do
+          response <- invoke MemoryManager remote content
+          respond MemoryManager retAddr response
+          yield s
 
-  (Write addr val) -> do
-    let src = checkAddress (addressLookup s) addr
-    case (sourceId src) of
-      Nothing -> do
-        addrVal <- writeMemory addr val
-        yield s
-      Just remote -> do
-        invokeAsync MemoryManager remote content ignore
-        yield s
+    (Write addr val) -> do
+      let src = checkAddress (addressLookup s) addr
+      case (sourceId src) of
+        Nothing -> do
+          addrVal <- writeMemory addr val
+          yield s
+        Just remote -> do
+          invokeAsync MemoryManager remote content ignore
+          yield s
 
 memoryManager s _ = yield s
 
@@ -177,34 +178,19 @@ The result that you must ultimately return is the, potentially updated, internal
 We now turn to the first line of the actual function definition:
 
 ```haskell
-memoryManager s (Message content retAddr) = case content of
+memoryManager s (Message content retAddr) = do
 ```
 
 Where `memoryManager` is the name of the function, `s` the first argument (of type `MemState`).
 We pattern-match on the second argument, meaning this function definition clause only works for values whose constructor is `Message`.
-By pattern matching we get access to the fields of the datatype, where we bind the names `senderId` and `msgContent` to the values of these fields.
+By pattern matching we get access to the fields of the datatype, where we bind the names `content` and `retAddr` to the values of these fields.
 
-The `do` *keyword* after the `=` sign indicates that the function executes within a monadic environment, the `SimM` environment in our case.
+The `do` *keyword* after the `=` sign indicates that the function executes within a monadic environment, the `Sim` environment in our case.
 The semantics in a monadic environment are different from those in a normal Haskell functions.
 A monadic environment has a more imperative feel, in which your function definition interacts with the environment step-by-step, statement after statements.
 This also gives rise to the scoping rules familiar to the imperative programmer: names cannot be used before they are declared.
 
-The next line in our function definition is:
-
-```haskell
-  let addrMaybe = identifyAddress msgContent
-```
-
-Haskell is whitespace sensitive, so make sure that you have a good editor that does automatic indenting.
-We use the `let` constructruct to bind the expression `identifyAddress msgContent` to the name `addrMaybe`.
-We use these let-bindings to bind *pure* expressions to names, where *pure* means that the expression has no side-effects [3].
-We can now just use the name `addrMaybe` instead of having to type `identifyAddress msgContent` everytime.
-Don't worry about efficiency, the evaluation mechanics of Haskell will ensure that the actual expression is only calculated once, even when we use the `addrMaybe` name multiple times.
-
-Because any component could have tried to send an ill-formed message to us, we have defined the utility function `identifyAddress` (in the `MemoryManager.Util` module) to make sure we are actually getting a memory request and subsequently extract the memory address from it.
-The value returned by `identifyAddress` is of type `Maybe Int`, which can either be `Just Int` in case the address was found, and `Nothing` in case the message was ill-formed.
-
-Next we define a nested `Case` statement that contains most of the actual behaviour of our memory manager component:
+Next we define a nested `case`-statement that contains most of the actual behaviour of our memory manager component:
 
 ```haskell
 case content of
@@ -234,18 +220,23 @@ case content of
         yield s
 ```
 
-First we check if an actual memory request was actually send to us, and bind the name `addr` to the value of the address in case it was.
-We then check if this address is part of the local address' for which our memory manager is responsible.
-For this we use the `elem` function which hase type:
+In the first alternative of our case-statement we handle a `Register` message, by updating our address lookup table with an additional memory source.
+We `yield` to the simulator with our updated internal state.
+
+In the second alternative we handle a `Read` request.
+The next line in our function definition, which checks which specific memory manager is responsible for the address, is:
 
 ```haskell
-elem :: Eq a => a -> [a] -> Bool
+let src = checkAddress (addressLookup s) addr
 ```
 
-a function that checks if value is an element of a list, and we surround it by backticks to use it as an infix operator.
-We see that we use the field-label `localAddress` of our `MemState` record as a function to extract the value belonging to this field from our internal state `s`.
+Haskell is whitespace sensitive, so make sure that you have a good editor that does automatic indenting.
+We use the `let` constructruct to bind the expression `checkAddress (addressLookup s) addr` to the name `src`.
+We use these let-bindings to bind *pure* expressions to names, where *pure* means that the expression has no side-effects [3].
+We can now just use the name `src` instead of having to type `checkAddress (addressLookup s) addr` everytime.
+Don't worry about efficiency, the evaluation mechanics of Haskell will ensure that the actual expression is only calculated once, even when we use the `src` name multiple times.
 
-If we are indeed responsible for this address we check in the third nested case statement if we are either doing a read or a write operation.
+In the next case-statement we check if the current or a remote memory manager is responsible for handling the address.
 In either alternative we must use the `do` keyword again because we will be executing multiple statements.
 We will now finally use some of the API functions, the first we encounter is:
 
@@ -254,27 +245,26 @@ addrVal <- readMemory addr
 ```
 
 The `readMemory` function accesses the simulator environment, retreiving the value of the memory location specified by `addr`.
-We use the left-arrow `<-` to indicate that this is a side-effecting expression (we are accessing the simulator environment), and that `addrVal` is not bound to the expression itself, but the value of the one-time execution of this statement.
+We use the left-arrow `<-` to indicate that this is a side-effecting expression (we are accessing the simulator environment), and that `addrVal` is not bound to the expression itself, but the value belonging to the execution of this statement.
 
 After reading the memory, we send the value back to the module that initially requested the memory access.
-We send the value asynchronously because we don't need an actual confirmation value.
-Having serviced the request, we use the `return` to give the (unaltered) internal state back to the simulation environment.
+We send the read value as a response to the return address (`retAddr`).
+Having serviced the request, we use the `yield` function to give the (unaltered) internal state back to the simulation environment.
 
-In case we our memory manager is not responsible for the address:
+If a remote memory manager is responsible for the address:
 
 ```haskell
-        False -> do
-          creator <- componentCreator
-          let remote = findWithDefault creator addr (remoteAddress s)
-          response <- sendMessageSync Nothing remote msgContent
-          sendMessageAsync Nothing senderId response
-          return s
+Just remote -> do
+  response <- invoke MemoryManager remote content
+  respond MemoryManager retAddr response
+  yield s
 ```
 
-We try to find the responsible component for the request from our address-to-component mapping, defaulting to the creator of our module.
-We then synchronously send a message to this component, and forward the received response to the component making the original memory request.
+We then synchronously invoke the remote memory manager with the original read request, and forward the received response to the component making the original memory request.
 
-In the situations which we didn't handle explicitly, such as receiving something besides a ComponentMsg, or receiving a ComponentMsg which was not a valid memory request, we simply disregard the simulator event, and return our unaltered internal state to the simulator.
+The third alternative, handling a write request, is analogous to handling a read request.
+
+In the situations which we didn't handle explicitly, such as receiving a `Tick`, we simply disregard the simulator event, and return our unaltered internal state to the simulator.
 
 #### ComponentInterface Instance
 At the bottom of our `MemoryManager` module we see the following code:
@@ -292,7 +282,13 @@ instance ComponentInterface MemoryManager where
 Here we define a so-called type-class instance.
 At this moment you do not need to know what a type-class is, just that you need to define this instance if you want your component to be able to be used by the SoOSiM simulator.
 
-This instance must always contain the definitons for `initState`, `componentName` and `componentBehaviour`, where `initState` is the minimal internal state of your component, `componentName` a function returning the globally unique name of your component, and `componentBehaviour` is the function defining the behaviour of your component.
+This instance must always contain the definitons for `State`, `Receive`, `Send`, `initState`, `componentName` and `componentBehaviour`.
+The `State` indicates the datatype representing the internal state of a module.
+The `Receive` indicates the datatype of messages that this component is expecting to receive.
+The `Send` indicates the datatype of messages this component will send as responses to invocation.
+The `initState` function returns a minimal internal state of your component.
+The `componentName` is a function returning the globally unique name of your component.
+Finally `componentBehaviour` is a function returning the behaviour of your component.
 The behaviour of your component must always have the type:
 
 ```haskell
