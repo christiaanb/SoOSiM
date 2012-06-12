@@ -26,6 +26,9 @@ Stability:           alpha
 Cabal-version:       >=1.6
 
 Extra-source-files: README.md
+                    examples/MemoryManager.hs
+                    examples/MemoryManager/Types.hs
+                    examples/MemoryManager/Util.hs
 
 Library
   HS-Source-Dirs:   src
@@ -33,7 +36,7 @@ Library
   Exposed-modules:  SoOSiM,
                     SoOSiM.Types
 
-  ghc-options:      -O2 -Wall
+  ghc-options:      -Wall
 
   Build-depends:    base              >= 4.3.1.0 && < 4.6,
                     concurrent-supply >= 0.1.1   && < 0.2,
