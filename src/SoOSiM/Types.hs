@@ -26,8 +26,11 @@ type ComponentName = String
 
 -- | Type class that defines every OS component
 class ComponentInterface s where
+  -- | Type of messages send by the component
   type Send    s
+  -- | Type of messages received by the component
   type Receive s
+  -- | Type of internal state of the component
   type State   s
   -- | The minimal internal state of your component
   initState          :: s -> State s
