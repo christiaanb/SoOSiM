@@ -25,6 +25,8 @@ Stability:           alpha
 
 Cabal-version:       >=1.6
 
+Extra-source-files: README.md
+
 Library
   HS-Source-Dirs:   src
 
