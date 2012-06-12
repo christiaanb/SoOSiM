@@ -70,8 +70,6 @@ module MemoryManager.Types where
 
 import SoOSiM
 
-data MemoryManager = MemoryManager
-
 data MemorySource
   = MemorySource
   { baseAddress :: Int
@@ -88,6 +86,8 @@ data MemCommand = Register Int Int (Maybe ComponentId)
                 | Read     Int
                 | forall a . Typeable a => Write Int a
   deriving Typeable
+
+data MemoryManager = MemoryManager
 ```
 
 #### ./examples/MemoryManager/Util.hs
@@ -115,7 +115,7 @@ module MemoryManager where
 ```
 
 We start by defining the name of our Haskell module, in this case `MemoryManager`.
-Make sure the name of file matches the name of the module, where haskell src files use the `.hs` file-name extention.
+Make sure the name of file matches the name of the module, where haskell src files use the `.hs` file-name extension.
 
 We continue with importing modules that we require to build our component:
 
@@ -147,11 +147,17 @@ data MemCommand = Register MemorySource
                 | Read     Int
                 | forall a . Typeable a => Write Int a
   deriving Typeable
+
+data MemoryManager = MemoryManager
 ```
 
 We define two record datatypes [1]; and with three fields (`baseAddress`, `scope`, and `sourceId`) and another with one field (`addressLookup`).
-The first record type defines an address range (`baseAddress` and `scope`) and an indication which memory manager is responsisable for tht memory range.
+The first record type defines an address range (`baseAddress` and `scope`) and an indication which memory manager is responsible for tht memory range.
 The second record type, which has only one field, which defines a dynamically-sized list of `MemorySource` elements.
+
+The third datatype is an algebraic datatype defining the kind of messages that can be send to the memory manager: registering a memory range, reading, and writing.
+
+The fourth datatype is a singleton datatype, which will act as the label/name for the interface defining our memory manager.
 
 We now start defining the actual behaviour of our memory manager, starting with its type annotation:
 
@@ -159,15 +165,15 @@ We now start defining the actual behaviour of our memory manager, starting with 
 memoryManager :: MemState -> Input MemCommand -> Sim MemState
 ```
 
-The type defition tells us that the first argument has the type of our internal component state, and the second argument a value of type `Input a`, where the `a` is instantiate to the `MemCommand` datatype.
-The possible values of the `Input a` type are enumarated in the *OS Component API* section.
+The type definition tells us that the first argument has the type of our internal component state, and the second argument a value of type `Input a`, where the `a` is instantiate to the `MemCommand` datatype.
+The possible values of the `Input a` type are enumerated in the *OS Component API* section.
 The value of the result is of type `Sim MemState`.
 This tells us two things:
 
-* The `memoryManager` function is exuted within the `Sim` monad.
+* The `memoryManager` function is executed within the `Sim` monad.
 * The actual value that is returned is of type `MemState`.
 
-A *monad* is many wonderfull things [2], way too much to explain here, so for the rest of this README we see it as an execution environment.
+A *monad* is many wonderful things [2], way too much to explain here, so for the rest of this README we see it as an execution environment.
 Only inside this execution environment will we have access to the SoOSiM API functions.
 
 Although we know the types of the arguments and the result of the function, we don't know their actual meaning.
@@ -230,10 +236,10 @@ The next line in our function definition, which checks which specific memory man
 let src = checkAddress (addressLookup s) addr
 ```
 
-Haskell is whitespace sensitive, so make sure that you have a good editor that does automatic indenting.
-We use the `let` constructruct to bind the expression `checkAddress (addressLookup s) addr` to the name `src`.
+Haskell is white-space sensitive, so make sure that you have a good editor that does automatic indenting.
+We use the `let` construct to bind the expression `checkAddress (addressLookup s) addr` to the name `src`.
 We use these let-bindings to bind *pure* expressions to names, where *pure* means that the expression has no side-effects [3].
-We can now just use the name `src` instead of having to type `checkAddress (addressLookup s) addr` everytime.
+We can now just use the name `src` instead of having to type `checkAddress (addressLookup s) addr` every time.
 Don't worry about efficiency, the evaluation mechanics of Haskell will ensure that the actual expression is only calculated once, even when we use the `src` name multiple times.
 
 In the next case-statement we check if the current or a remote memory manager is responsible for handling the address.
@@ -244,7 +250,7 @@ We will now finally use some of the API functions, the first we encounter is:
 addrVal <- readMemory addr
 ```
 
-The `readMemory` function accesses the simulator environment, retreiving the value of the memory location specified by `addr`.
+The `readMemory` function accesses the simulator environment, retrieving the value of the memory location specified by `addr`.
 We use the left-arrow `<-` to indicate that this is a side-effecting expression (we are accessing the simulator environment), and that `addrVal` is not bound to the expression itself, but the value belonging to the execution of this statement.
 
 After reading the memory, we send the value back to the module that initially requested the memory access.
@@ -282,7 +288,11 @@ instance ComponentInterface MemoryManager where
 Here we define a so-called type-class instance.
 At this moment you do not need to know what a type-class is, just that you need to define this instance if you want your component to be able to be used by the SoOSiM simulator.
 
-This instance must always contain the definitons for `State`, `Receive`, `Send`, `initState`, `componentName` and `componentBehaviour`.
+We use our singleton datatype, `MemoryManager`, as the label/name for our ComponentInterface instance.
+All (type-)functions in this interface receive the interface label as their first argument.
+For the type-functions (such as `State s`) we must explicitly mention the label, for normal function we can just use the underscore (`_`) as a place holder.
+
+The instance must always contain the definitions for `State`, `Receive`, `Send`, `initState`, `componentName` and `componentBehaviour`.
 The `State` indicates the datatype representing the internal state of a module.
 The `Receive` indicates the datatype of messages that this component is expecting to receive.
 The `Send` indicates the datatype of messages this component will send as responses to invocation.
@@ -295,7 +305,7 @@ The behaviour of your component must always have the type:
 (State iface) -> Input (Receive iface) -> Sim (State iface)
 ```
 
-Where `State iface` is the datatype of your component's internal state.
+Where `State iface` is the datatype of your component's internal state, and `Receive iface` is the datetype of the type of messages the component handles.
 
 ## SoOSiM API
 
@@ -320,7 +330,10 @@ class ComponentInterface s where
 #### Simulator Events
 ```haskell
 data Input a
-  = Message a ReturnAddress -- ^ A message send by another component: the first field is the message content, the second field is the address to send responses to
+  = Message a ReturnAddress -- ^ A message send by another component: the
+                            --   first field is the message content, the
+                            --   second field is the address to send
+                            --   responses to
   | Tick                    -- ^ Event send every simulation round
 ```
 
@@ -424,7 +437,8 @@ readMemory ::
 ```
 
 ```haskell
--- | Return the component Id of the component that created the current component
+-- | Return the component Id of the component that created the current
+--   component
 componentCreator ::
   Sim ComponentId
 ```
@@ -442,11 +456,13 @@ componentLookup ::
 #### Handling `Dynamic` Values
 
 ```haskell
--- | Converts a 'Dynamic' object back into an ordinary Haskell value of the correct type.
+-- | Converts a 'Dynamic' object back into an ordinary Haskell value of the
+--   correct type.
 unmarshall ::
   Typeable a
   => Dynamic  -- ^ The dynamically-typed object
-  -> a        -- ^ Returns: the value of the first argument, if it has the correct type, otherwise it gives an error.
+  -> a        -- ^ Returns: the value of the first argument, if it has the
+              -- correct type, otherwise it gives an error.
 ```
 
 References

@@ -4,8 +4,6 @@ module MemoryManager.Types where
 
 import SoOSiM
 
-data MemoryManager = MemoryManager
-
 data MemorySource
   = MemorySource
   { baseAddress :: Int
@@ -21,3 +19,5 @@ data MemCommand = Register MemorySource
                 | Read     Int
                 | forall a . Typeable a => Write Int a
   deriving Typeable
+
+data MemoryManager = MemoryManager
