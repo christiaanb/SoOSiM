@@ -7,8 +7,8 @@ import MemoryManager.Types
 import MemoryManager.Util
 
 memoryManager :: MemState -> Input MemCommand -> Sim MemState
-memoryManager s (Message (Register addr sc src) _)
-  = yield $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
+memoryManager s (Message (Register memorySource) _)
+  = yield $ s {addressLookup = memorySource:(addressLookup s)}
 
 memoryManager s (Message content@(Read addr) retAddr)
   = do

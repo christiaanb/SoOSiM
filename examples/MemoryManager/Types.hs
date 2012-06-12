@@ -17,7 +17,7 @@ data MemState =
   MemState { addressLookup :: [MemorySource]
            }
 
-data MemCommand = Register Int Int (Maybe ComponentId)
+data MemCommand = Register MemorySource
                 | Read     Int
                 | forall a . Typeable a => Write Int a
   deriving Typeable
