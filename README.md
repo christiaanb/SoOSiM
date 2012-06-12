@@ -5,10 +5,8 @@ Installation
 ------------
 
 * Download the latest Haskell Platform from: http://hackage.haskell.org/platform/
-* Run `cabal update` from the command line
-* Either clone the git repository, or download and unpack the zip-file from: http://github.com/christiaanb/SoOSiM
-* Change directory to the created directory
-* Run `cabal install` from the command line
+* Execute on the command-line: `cabal update`
+* Execute on the command-line: `cabal install SoOSiM`
 
 Creating OS Components
 ----------------------
@@ -17,81 +15,96 @@ We jump straight into some code, by showing the description of the *Memory Manag
 
 #### ./examples/MemoryManager.hs
 ```haskell
+{-# LANGUAGE TypeFamilies #-}
 module MemoryManager where
 
-import Data.IntMap
 import SoOSiM
 
 import MemoryManager.Types
 import MemoryManager.Util
 
+memoryManager :: MemState -> Input MemCommand -> Sim MemState
+memoryManager s (Message (Register addr sc src) _)
+  = yield $ s {addressLookup = (MemorySource addr sc src):(addressLookup s)}
+
+memoryManager s (Message content@(Read addr) retAddr)
+  = do
+    let src = checkAddress (addressLookup s) addr
+    case (sourceId src) of
+      Nothing -> do
+        addrVal <- readMemory addr
+        respond MemoryManager retAddr addrVal
+        yield s
+      Just remote -> do
+        response <- invoke MemoryManager remote content
+        respond MemoryManager retAddr response
+        yield s
+
+memoryManager s (Message content@(Write addr val) _)
+  = do
+    let src = checkAddress (addressLookup s) addr
+    case (sourceId src) of
+      Nothing -> do
+        addrVal <- writeMemory addr val
+        yield s
+      Just remote -> do
+        invokeAsync MemoryManager remote content ignore
+        yield s
+
+memoryManager s _ = yield s
+
+instance ComponentInterface MemoryManager where
+  type State   MemoryManager = MemState
+  type Receive MemoryManager = MemCommand
+  type Send    MemoryManager = Dynamic
+  initState _                = (MemState [])
+  componentName _            = "MemoryManager"
+  componentBehaviour _       = memoryManager
+```
+
+#### ./examples/MemoryManager/Types.hs
+```haskell
+{-# LANGUAGE DeriveDataTypeable        #-}
+{-# LANGUAGE ExistentialQuantification #-}
+module MemoryManager.Types where
+
+import SoOSiM
+
+data MemoryManager = MemoryManager
+
+data MemorySource
+  = MemorySource
+  { baseAddress :: Int
+  , scope       :: Int
+  , sourceId    :: Maybe ComponentId
+  }
+
+
 data MemState =
-  MemState { localAddress  :: [Int]
-           , remoteAddress :: IntMap ComponentId
+  MemState { addressLookup :: [MemorySource]
            }
 
-memoryManager :: MemState -> ComponentInput -> SimM MemState
-memoryManager s (ComponentMsg senderId msgContent) = do
-  let addrMaybe = identifyAddress msgContent
-  case addrMaybe of
-    Just addr ->
-      case (addr `elem` localAddress s) of
-        True  ->
-          case (memCommand msgContent) of
-            Read _  -> do
-              addrVal <- readMemory addr
-              sendMessageAsync Nothing senderId addrVal
-              return s
-            Write _ val -> do
-              writeMemory addr (toDyn val)
-              sendMessageAsync Nothing senderId (toDyn True)
-              return s
-        False -> do
-          creator <- componentCreator
-          let remote = findWithDefault creator addr (remoteAddress s)
-          response <- sendMessageSync Nothing remote msgContent
-          sendMessageAsync Nothing senderId response
-          return s
-    Nothing -> return s
-
-memoryManager s _ = return s
-
-
-instance ComponentIface MemState where
-  initState          = MemState [] empty
-  componentName _    = "MemoryManager"
-  componentBehaviour = memoryManager
+data MemCommand = Register Int Int (Maybe ComponentId)
+                | Read     Int
+                | forall a . Typeable a => Write Int a
+  deriving Typeable
 ```
 
 #### ./examples/MemoryManager/Util.hs
 ```haskell
 module MemoryManager.Util where
 
-import Data.Maybe
-import SoOSiM
-
 import MemoryManager.Types
 
-identifyAddress :: Dynamic -> Maybe Int
-identifyAddress d = case (fromDynamic d) of
-  Just (Write i _) -> Just i
-  Just (Read i)    -> Just i
-  Nothing          -> Nothing
-
-memCommand :: Dynamic -> MemCommand
-memCommand = fromJust . fromDynamic
-```
-
-#### ./examples/MemoryManager/Types.hs
-```haskell
-{-# LANGUAGE DeriveDataTypeable #-}
-module MemoryManager.Types where
-
-import SoOSiM
-
-data MemCommand = Read  Int
-                | Write Int Dynamic
-  deriving Typeable
+checkAddress ::
+  [MemorySource]
+  -> Int
+  -> MemorySource
+checkAddress sources addr = case (filter containsAddr sources) of
+    []    -> error ("address unknown: " ++ show addr)
+    (x:_) -> x
+  where
+    containsAddr (MemorySource base sc _) = base <= addr && addr < sc
 ```
 
 ### Component definition Step-by-Step
@@ -107,22 +120,27 @@ Make sure the name of file matches the name of the module, where haskell src fil
 We continue with importing modules that we require to build our component:
 
 ```haskell
-import Data.IntMap
 import SoOSiM
 
+import MemoryManager.Types
 import MemoryManager.Util
 ```
 
-The `Data.IntMap` module gives us an efficient datastructure, and corresponding functions, that maps integer keys to values.
 The `SoOSiM` module defines all the simulator API functions.
-Besides these *external* modules, we also import a *local* module called `MemoryManager.Util`, which we define in the `.MemoryManager/Util.hs` file.
+Besides the *external* module, we also import two *local* module called `MemoryManager.Types` and `MemoryManager.Util`, which we define in `./MemoryManager/Types.hs` and `./MemoryManager/Util.hs` respectively.
 
 We start our description with a datatype definition describing the internal state of our memory manager component:
 
 ```haskell
+data MemorySource
+  = MemorySource
+  { baseAddress :: Int
+  , scope       :: Int
+  , sourceId    :: Maybe ComponentId
+  }
+
 data MemState =
-  MemState { localAddress  :: [Int]
-           , remoteAddress :: IntMap ComponentId
+  MemState { addressLookup :: [MemorySource]
            }
 ```
 
@@ -133,15 +151,15 @@ The second field is an `IntMap` datastructure that maps address' to the *Compone
 We now start defining the actual behaviour of our memory manager, starting with its type annotation:
 
 ```haskell
-memoryManager :: MemState -> ComponentInput -> SimM MemState
+memoryManager :: MemState -> Input MemCommand -> Sim MemState
 ```
 
 The type defition tells us that the first argument has the type of our internal component state, and the second argument a value of type `ComponentInput`.
 The possible values of this type are enumarated in the *OS Component API* section.
-The value of the result is of type `SimM MemState`.
+The value of the result is of type `Sim MemState`.
 This tells us two things:
 
-* The `memoryManager` function is exuted within the `SimM` monad.
+* The `memoryManager` function is exuted within the `Sim` monad.
 * The actual value that is returned is of type `MemState`.
 
 A *monad* is many wonderfully things [2], way too much to explain here, so for the rest of this README we see it as an execution environment.
@@ -242,14 +260,17 @@ We then synchronously send a message to this component, and forward the received
 
 In the situations which we didn't handle explicitly, such as receiving something besides a ComponentMsg, or receiving a ComponentMsg which was not a valid memory request, we simply disregard the simulator event, and return our unaltered internal state to the simulator.
 
-#### ComponentIface Instance
+#### ComponentInterface Instance
 At the bottom of our `MemoryManager` module we see the following code:
 
 ```haskell
-instance ComponentIface MemState where
-  initState          = MemState [] empty
-  componentName _    = "MemoryManager"
-  componentBehaviour = memoryManager
+instance ComponentInterface MemoryManager where
+  type State   MemoryManager = MemState
+  type Receive MemoryManager = MemCommand
+  type Send    MemoryManager = Dynamic
+  initState _                = (MemState [])
+  componentName _            = "MemoryManager"
+  componentBehaviour _       = memoryManager
 ```
 
 Here we define a so-called type-class instance.
@@ -259,74 +280,104 @@ This instance must always contain the definitons for `initState`, `componentName
 The behaviour of your component must always have the type:
 
 ```haskell
-s -> ComponentInput -> SimM s
+(State iface) -> Input (Receive iface) -> Sim (State iface)
 ```
 
-Where `s` is the datatype of your component's internal state.
+Where `State iface` is the datatype of your component's internal state.
 
 ## SoOSiM API
 
-#### Component Interface Type Class
+#### ComponentInterface Type Class
 ```haskell
 -- | Type class that defines every OS component
-class ComponentIface s where
+class ComponentInterface s where
+  -- | Type of messages send by the component
+  type Send    s
+  -- | Type of messages received by the component
+  type Receive s
+  -- | Type of internal state of the component
+  type State   s
   -- | The minimal internal state of your component
-  initState          :: s
+  initState          :: s -> State s
   -- | A function returning the unique global name of your component
   componentName      :: s -> ComponentName
   -- | The function defining the behaviour of your component
-  componentBehaviour :: s -> ComponentInput -> SimM s
+  componentBehaviour :: s -> State s -> Input (Receive s) -> Sim (State s)
 ```
 
 #### Simulator Events
 ```haskell
-data ComponentInput
-  = ComponentMsg ComponentId Dynamic -- ^ A message send another component: the field argument is the 'ComponentId' of the sender, the second field the message content
-  | Initialize                       -- ^ Event send when a component is first created
-  | Deinitialize                     -- ^ Event send when a component is about to be removed
-  | Tick                             -- ^ Event send every simulation round
+data Input a
+  = Message a ReturnAddress -- ^ A message send by another component: the first field is the message content, the second field is the address to send responses to
+  | Tick                    -- ^ Event send every simulation round
 ```
 
 #### Accessing the simulator
 ```haskell
--- | Register a component interface with the simulator
-registerComponent ::
-  ComponentIface s
-  => s
-  -> SimM ()
-```
-
-```haskell
 -- | Create a new component
 createComponent ::
-  Maybe NodeId         -- ^ Node to create component on, set to 'Nothing' to create on current node
-  -> Maybe ComponentId -- ^ ComponentId to set as parent, set to 'Nothing' to use own ComponentId
-  -> String            -- ^ Name of the registered component
-  -> SimM ComponentId  -- ^ 'ComponentId' of the created component
+  (ComponentInterface iface, Typeable (Receive iface))
+  => iface
+  -- ^ Component Interface
+  -> Sim ComponentId
+  -- ^ 'ComponentId' of the created component
 ```
 
 ```haskell
 -- | Synchronously invoke another component
 invoke ::
-  Maybe ComponentId -- ^ Caller, leave 'Nothing' to set to current module
-  -> ComponentId    -- ^ Callee
-  -> Dynamic        -- ^ Argument
-  -> SimM Dynamic   -- ^ Response from recipient
+  (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface))
+  => iface
+  -- ^ Interface type
+  -> ComponentId
+  -- ^ ComponentId of callee
+  -> Receive iface
+  -- ^ Argument
+  -> Sim (Send iface)
+  -- ^ Response from callee
 ```
 
 ```haskell
--- | Invoke another component, don't wait for a response
-invokeNoWait ::
-  Maybe ComponentId -- ^ Caller, leave 'Nothing' to set to current module
-  -> ComponentId    -- ^ Callee
-  -> Dynamic        -- ^ Argument
-  -> SimM ()        -- ^ Call returns immediately
+-- | Invoke another component, handle response asynchronously
+invokeAsync ::
+  (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface))
+  => iface
+  -- ^ Interface type
+  -> ComponentId
+  -- ^ ComponentId of callee
+  -> Receive iface
+  -- ^ Argument
+  -> (Send iface -> Sim ())
+  -- ^ Response Handler
+  -> Sim ()
+  -- ^ Call returns immediately
+```
+
+```haskell
+-- | Respond to an invocation
+respond ::
+  (ComponentInterface iface, Typeable (Send iface))
+  => iface
+  -- ^ Interface type
+  -> ReturnAddress
+  -- ^ Return address to send response to
+  -> (Send iface)
+  -- ^ Value to send as response
+  -> Sim ()
+  -- ^ Call returns immediately
+```
+
+```haskell
+-- | Yield internal state to the simulator scheduler
+yield ::
+  a
+  -> Sim a
 ```
 
 ```haskell
 -- | Get the component id of your component
 getComponentId ::
-  SimM ComponentId
+  Sim ComponentId
 ```
 
 ```haskell
@@ -336,58 +387,54 @@ getNodeId ::
 ```
 
 ```haskell
+-- | Create a new node
+createNode ::
+  Sim NodeId -- ^ NodeId of the created node
+```
+
+```haskell
+-- | Write memory of local node
+writeMemory ::
+  Typeable a
+  => Int
+  -- ^ Address to write
+  -> a
+  -- ^ Value to write
+  -> Sim ()
+```
+
+```haskell
+-- | Read memory of local node
+readMemory ::
+  Int
+  -- ^ Address to read
+  -> Sim Dynamic
+```
+
+```haskell
 -- | Return the component Id of the component that created the current component
 componentCreator ::
-  SimM ComponentId
+  Sim ComponentId
 ```
 
 ```haskell
--- | Write memory of a node
-writeMemory ::
-  Maybe NodeId -- ^ Node you want to write on, leave 'Nothing' to set to current node
-  -> Int       -- ^ Address to write
-  -> Dynamic   -- ^ Value to write
-  -> SimM ()
-```
-
-```haskell
--- | Read memory of a node
-readMemory ::
-  -> Maybe NodeId -- ^ Node you want to look on, leave 'Nothing' to set to current node
-  -> Int          -- ^ Address to read
-  -> SimM Dynamic
-```
-
-```haskell
--- | Get the unique 'ComponentId' of a certain component
+-- | Get the unique 'ComponentId' of a component implementing an interface
 componentLookup ::
-  Maybe NodeId                -- ^ Node you want to look on, leave 'Nothing' to set to current node
-  -> ComponentName            -- ^ Name of the component you are looking for
-  -> SimM (Maybe ComponentId) -- ^ 'Just' 'ComponentID' if the component is found, 'Nothing' otherwise
+  ComponentInterface iface
+  => iface
+  -- ^ Interface type of the component you are looking for
+  -> Sim (Maybe ComponentId)
+  -- ^ 'Just' 'ComponentID' if a component is found, 'Nothing' otherwise
 ```
 
 #### Handling `Dynamic` Values
 
 ```haskell
--- | Converts an arbitrary value into an object of type 'Dynamic'
-toDyn :: Typeable a => a -> Dynamic
-```
-
-```haskell
 -- | Converts a 'Dynamic' object back into an ordinary Haskell value of the correct type.
-fromDyn ::
+unmarshall ::
   Typeable a
   => Dynamic  -- ^ The dynamically-typed object
-  -> a        -- ^ A default value
-  -> a        -- ^ Returns: the value of the first argument, if it has the correct type, otherwise the value of the second argument.
-```
-
-```haskell
--- | Converts a 'Dynamic' object back into an ordinary Haskell value of the correct type.
-fromDynamic ::
-  Typeable a
-  => Dynamic  -- ^ The dynamically-typed object
-  -> Maybe a  -- ^ Returns: 'Just a', if the dynamically-typed object has the correct type (and 'a' is its value), or 'Nothing' otherwise.
+  -> a        -- ^ Returns: the value of the first argument, if it has the correct type, otherwise it gives an error.
 ```
 
 References
