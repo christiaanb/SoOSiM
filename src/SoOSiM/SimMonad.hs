@@ -21,7 +21,7 @@ createComponent ::
   => iface
   -- ^ Component Interface
   -> Sim ComponentId
-  -- ^ 'ComponentId of the create component'
+  -- ^ 'ComponentId' of the created component
 createComponent = createComponentNP Nothing Nothing
 
 -- | Create a new component
@@ -196,7 +196,7 @@ respondS _ senderM (RA (recipient,respTV)) content = Sim $ do
   lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
   lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
 
--- | Yield to the simulator scheduler
+-- | Yield internal state to the simulator scheduler
 yield ::
   a
   -> Sim a
