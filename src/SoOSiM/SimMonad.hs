@@ -1,9 +1,36 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module SoOSiM.SimMonad where
+{-# LANGUAGE TypeFamilies        #-}
+module SoOSiM.SimMonad
+  ( -- * Basic API
+    createComponent
+  , invoke
+  , invokeAsync
+  , respond
+  , yield
+  , readMemory
+  , writeMemory
+  , componentLookup
+  , traceMsg
+  , createNode
+  -- * Advanced API
+  , runSTM
+  , getComponentId
+  , getNodeId
+  , componentCreator
+  -- * Specialized API
+  , createComponentN
+  , createComponentNP
+  , invokeS
+  , invokeAsyncS
+  , respondS
+  , readMemoryN
+  , writeMemoryN
+  )
+where
 
-import           Control.Concurrent.STM  (STM,newTVar,readTVar,writeTVar)
+import           Control.Concurrent.STM  (STM,TVar,newTVar,readTVar,writeTVar)
 import           Control.Monad.Coroutine (suspend)
 import           Control.Monad.State     (gets,lift,modify)
 import           Data.Dynamic            (Dynamic,Typeable,toDyn)
@@ -22,7 +49,7 @@ createComponent ::
   -- ^ Component Interface
   -> Sim ComponentId
   -- ^ 'ComponentId' of the created component
-createComponent = createComponentNP Nothing Nothing
+createComponent = createComponentNPS Nothing Nothing Nothing
 
 -- | Create a new component
 createComponentN ::
@@ -32,27 +59,47 @@ createComponentN ::
   -> NodeId
   -- Node to create component on
   -> Sim ComponentId
-createComponentN iface nId = createComponentNP (Just nId) Nothing iface
+createComponentN iface nId =
+  createComponentNPS (Just nId) Nothing Nothing iface
 
 -- | Create a new component
 createComponentNP ::
+  (ComponentInterface iface, Typeable (Receive iface))
+  => NodeId
+  -- ^ Node to create component on, leave to 'Nothing' to create on current
+  -- node
+  -> ComponentId
+  -- ^ ComponentId to set as parent, set to 'Nothing' to use own ComponentId
+  -> iface
+  -- ^ Component Interface
+  -> Sim ComponentId
+  -- ^ 'ComponentId' of the created component
+createComponentNP nodeId parentId iface =
+  createComponentNPS (Just nodeId) (Just parentId) Nothing iface
+
+-- | Create a new component
+createComponentNPS ::
   (ComponentInterface iface, Typeable (Receive iface))
   => Maybe NodeId
   -- ^ Node to create component on, leave to 'Nothing' to create on current
   -- node
   -> Maybe ComponentId
   -- ^ ComponentId to set as parent, set to 'Nothing' to use own ComponentId
+  -> Maybe (State iface)
+  -- ^ Internal State, leave 'Nothing' to set to default
   -> iface
   -- ^ Component Interface
   -> Sim ComponentId
   -- ^ 'ComponentId' of the created component
-createComponentNP nodeIdM parentIdM iface = Sim $ do
+createComponentNPS nodeIdM parentIdM iStateM iface = Sim $ do
     nodeId    <- fmap (`fromMaybe` nodeIdM) $ gets currentNode
     parentId  <- fmap (`fromMaybe` parentIdM) $ gets currentComponent
     compId    <- getUniqueM
 
     statusTV  <- (lift . lift) $ newTVar ReadyToRun
-    stateTV   <- (lift . lift) $ newTVar (initState iface)
+
+    let iState = fromMaybe (initState iface) iStateM
+    stateTV   <- (lift . lift) $ newTVar iState
     msgBufTV  <- (lift . lift) $ newTVar []
     let meta  = SimMetaData 0 0 0 Map.empty Map.empty
     metaTV    <- (lift . lift) $ newTVar meta
@@ -138,7 +185,7 @@ invokeAsyncS ::
   => iface
   -- ^ Interface type
   -> Maybe ComponentId
-  -- ^ Caller, leave 'Nothing' to set to current module
+  -- ^ Parent of handler, leave 'Nothing' to set to the current module
   -> ComponentId
   -- ^ Callee
   -> (Receive iface)
@@ -147,9 +194,14 @@ invokeAsyncS ::
   -- ^ Handler
   -> Sim ()
   -- ^ Call returns immediately
-invokeAsyncS _ senderM recipient content _ = Sim $ do
-  sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
+invokeAsyncS _ parentIdM recipient content handler = Sim $ do
+  nodeId       <- gets currentNode
   responseTV   <- lift . lift . newTVar $ toDyn (undefined :: Send iface)
+  parentId     <- fmap (`fromMaybe` parentIdM) $ gets currentComponent
+  sender       <- runSim $ createComponentNPS (Just nodeId) parentIdM
+                    (Just (recipient,responseTV,handler . unmarshallAsync))
+                    (HS parentId)
+
   let response = RA (sender,responseTV)
   let message  = Message (toDyn content) response
 
@@ -157,6 +209,9 @@ invokeAsyncS _ senderM recipient content _ = Sim $ do
   sNodeId <- lift $ componentNode sender
   lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
   lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
+  where
+    unmarshallAsync :: Dynamic -> Send iface
+    unmarshallAsync = unmarshall "invokeAsyncS"
 
 -- | Respond to an invocation
 respond ::
@@ -319,3 +374,17 @@ runSTM ::
   STM a
   -> Sim a
 runSTM = Sim . lift . lift
+
+data HandlerStub = HS ComponentId
+
+instance ComponentInterface HandlerStub where
+  type State   HandlerStub = (ComponentId, TVar Dynamic, Dynamic -> Sim ())
+  type Receive HandlerStub = ()
+  type Send    HandlerStub = ()
+  initState _              = undefined
+  componentName (HS cId)   = "async handler for component " ++ show cId
+  componentBehaviour _ (waitingFor, tv, handler) _ = Sim $ do
+    suspend (Request waitingFor return)
+    var <- lift . lift $ readTVar tv
+    runSim $ handler var
+    suspend Kill

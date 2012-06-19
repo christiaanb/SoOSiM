@@ -8,6 +8,7 @@ import           Control.Concurrent.STM  (TVar,atomically,readTVar,writeTVar)
 import           Control.Monad.Coroutine (resume)
 import           Control.Monad.State     (execStateT,gets,lift,modify)
 import           Data.Dynamic            (Dynamic,Typeable)
+import qualified Data.IntMap             as IM
 import qualified Data.Traversable        as T
 
 import SoOSiM.Simulator.Util
@@ -40,6 +41,7 @@ executeComponent (CC token cId _ statusTV stateTV bufferTV _ metaTV) = do
                                        <*> readTVar bufferTV
 
   ((status',state'),buffer') <- case (status,buffer) of
+    (Killed, _) -> return ((status,state),buffer)
     (ReadyToRun, []) -> do
       incrRunningCount metaTV
       r <- handleResult (componentBehaviour token state Tick) state
@@ -77,6 +79,11 @@ handleResult f state = do
     Right state'       -> return (ReadyToRun            , state')
     Left (Request o c) -> return (WaitingFor o (Sim . c), state)
     Left (Yield c)     -> resumeYield c
+    Left Kill          -> do
+      nId <- gets currentNode
+      cId <- gets currentComponent
+      modifyNode nId (\n -> n {nodeComponents = IM.delete cId (nodeComponents n)})
+      return (Killed, state)
 
 runUntilNothingM ::
   Monad m

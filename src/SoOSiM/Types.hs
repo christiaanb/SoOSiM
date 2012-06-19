@@ -83,6 +83,8 @@ data ComponentStatus a
   -- with computation ('(' -> 'SimM' a) once received
   | ReadyToRun
   -- ^ Component is busy doing computations
+  | Killed
+  -- ^ Module scheduled for deletion
 
 -- | Events send to components by the simulator
 data Input a
@@ -153,10 +155,12 @@ instance MonadUnique SimInternal where
 data RequestOrYield request response x
   = Request request (response -> x)
   | Yield   x
+  | Kill
 
 instance Functor (RequestOrYield x f) where
   fmap f (Request x g) = Request x (f . g)
   fmap f (Yield y)     = Yield (f y)
+  fmap _ Kill          = Kill
 
 -- | The internal monad of the simulator is currently a simple state-monad
 -- wrapping STM
