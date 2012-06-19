@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 module HeatMap.Application where
 
+import Control.Concurrent.STM
 import Control.Monad
 import Data.Maybe
 import qualified Data.IntMap as IM
@@ -61,15 +62,21 @@ heatMapApplication hmState (Message Compute retAddr) = do
                     ) (zip wlocs rlocs)
 
   -- Make the worker threads do actual work
-  let workers' = IM.fromList (zip workerIDs (repeat Compute))
-  mapM_ (\x -> invokeAsync HeatMapWorker x Compute ignore) workerIDs
+  workers' <- runSTM $ newTVar $ IM.fromList (zip workerIDs (repeat Compute))
+  mapM_ (\x -> invokeAsync HeatMapWorker x Compute (handler workers' x)) workerIDs
 
-  yield $ hmState {workers = workers'}
+  respond HeatMap retAddr undefined
+
+  return $ hmState {workers = workers'}
+
+  where
+    handler :: TVar (IM.IntMap HMMsg) -> ComponentId -> HMMsg -> Sim ()
+    handler workersTV cId Done = do
+      runSTM $ modifyTVar workersTV (IM.insert cId Done)
 
 -- Keep track of finished workers
-heatMapApplication hmState (Message Done retAddr) = do
-  let senderId = returnAddress retAddr
-  let workers' = IM.insert senderId Done (workers hmState)
+heatMapApplication hmState Tick = do
+  workers' <- runSTM $ readTVar $ workers hmState
   if (all (== Done) . IM.elems $ workers')
     then do -- All workers are finished
       let (w,h) = arraySize hmState
@@ -93,22 +100,27 @@ heatMapApplication hmState (Message Done retAddr) = do
       traceMsg (show rVals)
 
       -- Restart all workers to run next iteration
-      let workerIDs = IM.keys . workers $ hmState
+      runSTM $ modifyTVar (workers hmState) (IM.map (\_ -> Compute))
+      let workerIDs = IM.keys workers'
       mapM_ (\x -> invokeAsync HeatMapWorker x
-                     Compute ignore
+                     Compute (handler (workers hmState) x)
             ) workerIDs
 
-      yield $ hmState { workers = IM.map (\_ -> Compute) (workers hmState) }
+      return hmState
     else do -- Still waiting for some workers
-      yield $ hmState { workers = workers' }
+      return hmState
+  where
+  handler :: TVar (IM.IntMap HMMsg) -> ComponentId -> HMMsg -> Sim ()
+  handler workersTV cId Done = do
+    runSTM $ modifyTVar workersTV (IM.insert cId Done)
 
-heatMapApplication hmState _ = yield hmState
 
 heatMapWorker :: HMWorker -> Input HMMsg -> Sim HMWorker
-heatMapWorker hmwState (Message (HeatMap.NewState s') _) =
+heatMapWorker hmwState (Message (HeatMap.NewState s') retChan) = do
+  respond HeatMapWorker retChan undefined
   yield s'
 
-heatMapWorker hmwState (Message Compute _) = do
+heatMapWorker hmwState (Message Compute retChan) = do
   -- Extract configuration
   let (c,vert,hor)   = rdLocs hmwState
   let (dy2i,dx2i,dt) = wtransfer hmwState
@@ -135,9 +147,8 @@ heatMapWorker hmwState (Message Compute _) = do
   invokeAsync MemoryManager memManagerId
     (Write (wrLoc hmwState) newVal) ignore
 
-  -- Notify creator that we're finished
-  creator <- componentCreator
-  invokeAsync HeatMap creator Done ignore
+  -- Notify that we're finished
+  respond HeatMapWorker retChan Done
 
   yield hmwState
 
@@ -151,7 +162,7 @@ instance ComponentInterface HeatMap where
   type Receive HeatMap = HMMsg
   type Send HeatMap    = HMMsg
   type State HeatMap   = HMState
-  initState _          = HMState IM.empty (2,2) (0.5,0.5,0.5)
+  initState _          = HMState undefined (2,2) (0.5,0.5,0.5)
   componentName _      = "HeatMap"
   componentBehaviour _ = heatMapApplication
 

@@ -1,14 +1,16 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module HeatMap.Types where
 
-import SoOSiM
+import Control.Concurrent.STM
 import Data.IntMap
+
+import SoOSiM
 
 data HMMsg = NewState HMWorker | Compute | Done
   deriving (Eq, Typeable)
 
 data HMState = HMState
-  { workers   :: IntMap HMMsg
+  { workers   :: TVar (IntMap HMMsg)
   , arraySize :: (Int,Int)
   , transfer  :: (Float,Float,Float)
   }

@@ -17,7 +17,7 @@ scheduler schedState (Message (Execute iface memCommands) retAddr) = do
   memCompId <- createComponentN MemoryManager nodeId
   mapM_ (\c -> invokeAsync MemoryManager memCompId c ignore)
     memCommands
-  compId    <- createComponentNP (Just nodeId) (Just $ returnAddress retAddr) iface
+  compId    <- createComponentNP nodeId (returnAddress retAddr) iface
   respond Scheduler retAddr compId
   yield schedState
 

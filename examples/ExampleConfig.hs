@@ -100,7 +100,7 @@ instance ShowIO ComponentContext where
     buffer  <- (readTVarIO bufferTV) >>= showIO
     mdata   <- (readTVarIO mdataTV) >>= showIO
     let traceMsgsDoc = foldl ($$) empty $ map text traceMsgs
-    let retval = text (componentName iface) <+> parens (text "id" <> colon <+> text (show cId)) <> colon <+> status $+$ (nest 2 (text "Pending events" <> colon <+> brackets (buffer))) $+$ (nest 2 (text "traceMsgs" <> colon <+> traceMsgsDoc)) $+$ (nest 2 mdata)
+    let retval = text (componentName iface) <+> parens (text "id" <> colon <+> text (show cId)) <> colon <+> status $+$ (nest 2 (text "Pending events" <> colon <+> brackets (buffer))) $+$ (nest 2 (text "TraceMsgs" <> colon <+> traceMsgsDoc)) $+$ (nest 2 mdata)
     return retval
 
 instance ShowIO SimMetaData where

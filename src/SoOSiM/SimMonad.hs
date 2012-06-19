@@ -42,6 +42,7 @@ import SoOSiM.Simulator.Util
 import SoOSiM.Types
 import SoOSiM.Util
 
+{-# INLINE createComponent #-}
 -- | Create a new component
 createComponent ::
   (ComponentInterface iface, Typeable (Receive iface))
@@ -51,6 +52,7 @@ createComponent ::
   -- ^ 'ComponentId' of the created component
 createComponent = createComponentNPS Nothing Nothing Nothing
 
+{-# INLINE createComponentN #-}
 -- | Create a new component
 createComponentN ::
   (ComponentInterface iface, Typeable (Receive iface))
@@ -62,6 +64,7 @@ createComponentN ::
 createComponentN iface nId =
   createComponentNPS (Just nId) Nothing Nothing iface
 
+{-# INLINE createComponentNP #-}
 -- | Create a new component
 createComponentNP ::
   (ComponentInterface iface, Typeable (Receive iface))
@@ -117,6 +120,7 @@ createComponentNPS nodeIdM parentIdM iStateM iface = Sim $ do
         , nodeComponentLookup = Map.insert cname cId nodeComponentLookup
         }
 
+{-# INLINE invoke #-}
 -- | Synchronously invoke another component
 invoke ::
   (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface))
@@ -160,6 +164,7 @@ invokeS _ senderM recipient content = Sim $ do
   suspend (Request recipient return)
   fmap (unmarshall "invoke") . lift . lift $ readTVar responseTV
 
+{-# INLINE invokeAsync #-}
 -- | Invoke another component, handle response asynchronously
 invokeAsync ::
   (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface))
@@ -213,6 +218,7 @@ invokeAsyncS _ parentIdM recipient content handler = Sim $ do
     unmarshallAsync :: Dynamic -> Send iface
     unmarshallAsync = unmarshall "invokeAsyncS"
 
+{-# INLINE respond #-}
 -- | Respond to an invocation
 respond ::
   (ComponentInterface iface, Typeable (Send iface))
@@ -338,6 +344,7 @@ componentCreator = Sim $ do
   let ceCreator = creator ce
   return ceCreator
 
+{-# INLINE componentLookup #-}
 -- | Get the unique 'ComponentId' of a component implementing an interface
 componentLookup ::
   ComponentInterface iface
@@ -346,7 +353,6 @@ componentLookup ::
   -> Sim (Maybe ComponentId)
   -- ^ 'Just' 'ComponentID' if a component is found, 'Nothing' otherwise
 componentLookup = componentLookupN Nothing
-
 
 -- | Get the unique 'ComponentId' of a component implementing an interface
 componentLookupN ::
@@ -382,7 +388,8 @@ instance ComponentInterface HandlerStub where
   type Receive HandlerStub = ()
   type Send    HandlerStub = ()
   initState _              = undefined
-  componentName (HS cId)   = "async handler for component " ++ show cId
+  componentName (HS cId)   = "Asynchronous callback for component " ++
+                               show cId
   componentBehaviour _ (waitingFor, tv, handler) _ = Sim $ do
     suspend (Request waitingFor return)
     var <- lift . lift $ readTVar tv
