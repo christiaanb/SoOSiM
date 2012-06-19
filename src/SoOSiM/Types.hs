@@ -7,7 +7,27 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
-module SoOSiM.Types where
+module SoOSiM.Types
+  ( -- * SoOSiM API Types
+    ComponentInterface (..)
+  , Sim (..)
+  , Input (..)
+  , ReturnAddress (..)
+  , ComponentId
+  , ComponentName
+  , NodeId
+  -- * SoOSiM Internal Types
+  , ComponentContext (..)
+  , ComponentStatus (..)
+  , RequestOrYield (..)
+  , Node (..)
+  , SimMetaData (..)
+  , SimMonad
+  , SimInternal
+  , SimState (..)
+  , NodeInfo (..)
+  )
+where
 
 import           Control.Concurrent.STM     (STM,TVar)
 import           Control.Concurrent.Supply  (Supply,freshId)
@@ -24,7 +44,7 @@ type Unique        = Int
 type ComponentId   = Unique
 type ComponentName = String
 
--- | Type class that defines every OS component
+-- | Type class that defines an OS component
 class ComponentInterface s where
   -- | Type of messages send by the component
   type Send    s

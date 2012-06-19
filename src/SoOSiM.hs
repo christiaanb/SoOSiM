@@ -1,16 +1,22 @@
 module SoOSiM
   ( module SoOSiM.SimMonad
-  , Sim
-  , ComponentId
-  , NodeId
+  -- * SoOSiM API Types
   , ComponentInterface (..)
   , Input (..)
+  , Sim
+  , ComponentId
+  , ComponentName
+  , NodeId
+  -- * Imported Types
   , Typeable
   , Dynamic
-  , ignore
+  -- * Progress The Simulator
   , tick
+  -- * Utility Functions
+  , ignore
   , unmarshall
   , returnAddress
+
   )
 where
 
@@ -20,7 +26,7 @@ import SoOSiM.SimMonad
 import SoOSiM.Simulator      (tick)
 import SoOSiM.Simulator.Util (returnAddress)
 import SoOSiM.Types          (ComponentId,ComponentInterface(..),Input(..)
-                             ,NodeId,Sim)
+                             ,NodeId,Sim,ComponentName)
 import SoOSiM.Util           (unmarshall)
 
 ignore ::
