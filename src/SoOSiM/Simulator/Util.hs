@@ -34,7 +34,8 @@ componentNode ::
   -> SimMonad NodeId
 componentNode cId = do
   ns <- gets nodes
-  let (node:_) = IM.elems $ IM.filter (\n -> IM.member cId (nodeComponents n)) ns
+  let (node:_) = IM.elems
+               $ IM.filter (\n -> IM.member cId (nodeComponents n)) ns
   return (nodeId node)
 
 updateMsgBuffer ::
@@ -45,11 +46,12 @@ updateMsgBuffer ::
   -> Node
   -- ^ Node containing the component
   -> SimMonad ()
-updateMsgBuffer recipient msg@(Message _ (RA (sender,_))) node = do
+updateMsgBuffer recipient msg@(Message _ sender) node = do
     let ce = (nodeComponents node) IM.! recipient
     lift $ modifyTVar (msgBuffer ce) (\msgs -> msgs ++ [msg])
     lift $ modifyTVar (simMetaData ce)
-            (\mData -> mData {msgsReceived = Map.insertWith (+) sender 1
+            (\mData -> mData {msgsReceived = Map.insertWith (+)
+                                              (snd $ unRA sender) 1
                                               (msgsReceived mData)})
 
 updateMsgBuffer _ _ _ = return ()

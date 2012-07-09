@@ -42,6 +42,13 @@ executeComponent (CC token cId _ statusTV stateTV bufferTV _ metaTV) = do
 
   ((status',state'),buffer') <- case (status,buffer) of
     (Killed, _) -> return ((status,state),buffer)
+    (Running 0 c, _) -> do
+      incrRunningCount metaTV
+      r <- handleResult c state
+      return (r,buffer)
+    (Running n c, _) -> do
+      incrRunningCount metaTV
+      return ((Running (n-1) c,state),buffer)
     (ReadyToRun, []) -> do
       incrRunningCount metaTV
       r <- handleResult (componentBehaviour token state Tick) state
@@ -78,11 +85,13 @@ handleResult f state = do
   case res of
     Right state'       -> return (ReadyToRun            , state')
     Left (Request o c) -> return (WaitingFor o (Sim . c), state)
+    Left (Run i c)     -> return (Running i (Sim c)     , state)
     Left (Yield c)     -> resumeYield c
     Left Kill          -> do
       nId <- gets currentNode
       cId <- gets currentComponent
-      modifyNode nId (\n -> n {nodeComponents = IM.delete cId (nodeComponents n)})
+      modifyNode nId
+        (\n -> n {nodeComponents = IM.delete cId (nodeComponents n)})
       return (Killed, state)
 
 runUntilNothingM ::
@@ -114,11 +123,11 @@ handleInput ::
   -- (potentially update) component state, 'Nothing' when event is consumed;
   -- 'Just' 'ComponentInput' otherwise)
 handleInput _ metaTV st@(WaitingFor waitingFor f) state
-  msg@(Message _ (RA (sender,_)))
-  | waitingFor == sender
+  msg@(Message content sender)
+  | waitingFor == (fst $ unRA sender)
   = do
     incrRunningCount metaTV
-    r <- handleResult (f ()) state
+    r <- handleResult (f content) state
     return (r,Nothing)
   | otherwise
   = incrWaitingCount metaTV >> return ((st, state), Just msg)

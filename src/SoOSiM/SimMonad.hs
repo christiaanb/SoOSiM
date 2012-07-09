@@ -14,6 +14,7 @@ module SoOSiM.SimMonad
   , componentLookup
   , traceMsg
   , createNode
+  , compute
   -- * Advanced API
   , runSTM
   , getComponentId
@@ -30,7 +31,7 @@ module SoOSiM.SimMonad
   )
 where
 
-import           Control.Concurrent.STM  (STM,TVar,newTVar,readTVar,writeTVar)
+import           Control.Concurrent.STM  (STM,newTVar)
 import           Control.Monad.Coroutine (suspend)
 import           Control.Monad.State     (gets,lift,modify)
 import           Data.Dynamic            (Dynamic,Typeable,toDyn)
@@ -152,17 +153,15 @@ invokeS ::
   -- ^ Response from recipient
 invokeS _ senderM recipient content = Sim $ do
   sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
-  responseTV   <- lift . lift . newTVar $ toDyn (undefined :: Send iface)
-  let response = RA (sender,responseTV)
-  let message  = Message (toDyn content) response
+  let message  = Message (toDyn content) (RA (sender,sender))
 
   rNodeId <- lift $ componentNode recipient
   sNodeId <- lift $ componentNode sender
   lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
   lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
 
-  suspend (Request recipient return)
-  fmap (unmarshall "invoke") . lift . lift $ readTVar responseTV
+  var <- suspend (Request recipient return)
+  return (unmarshall "invoke" var)
 
 {-# INLINE invokeAsync #-}
 -- | Invoke another component, handle response asynchronously
@@ -201,19 +200,17 @@ invokeAsyncS ::
   -- ^ Call returns immediately
 invokeAsyncS _ parentIdM recipient content handler = Sim $ do
   nodeId       <- gets currentNode
-  responseTV   <- lift . lift . newTVar $ toDyn (undefined :: Send iface)
   parentId     <- fmap (`fromMaybe` parentIdM) $ gets currentComponent
   sender       <- runSim $ createComponentNPS (Just nodeId) parentIdM
-                    (Just (recipient,responseTV,handler . unmarshallAsync))
+                    (Just (recipient,handler . unmarshallAsync))
                     (HS parentId)
 
-  let response = RA (sender,responseTV)
-  let message  = Message (toDyn content) response
+  let message  = Message (toDyn content) (RA (sender,parentId))
 
   rNodeId <- lift $ componentNode recipient
-  sNodeId <- lift $ componentNode sender
+  sNodeId <- lift $ componentNode parentId
   lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
-  lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
+  lift $ modifyNodeM sNodeId (incrSendCounter recipient parentId)
   where
     unmarshallAsync :: Dynamic -> Send iface
     unmarshallAsync = unmarshall "invokeAsyncS"
@@ -247,15 +244,20 @@ respondS ::
   -- ^ Value to send as response
   -> Sim ()
   -- ^ Call returns immediately
-respondS _ senderM (RA (recipient,respTV)) content = Sim $ do
+respondS _ senderM recipient content = Sim $ do
   sender <- fmap (`fromMaybe` senderM) $ gets currentComponent
-  lift . lift $ writeTVar respTV (toDyn content)
-
-  let message = Message undefined (RA (sender,undefined))
-  rNodeId <- lift $ componentNode recipient
+  let message = Message (toDyn content) (RA (sender,sender))
+  rNodeId <- lift $ componentNode (fst $ unRA recipient)
   sNodeId <- lift $ componentNode sender
-  lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
-  lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
+  lift $ modifyNodeM rNodeId (updateMsgBuffer (fst $ unRA recipient) message)
+  lift $ modifyNodeM sNodeId (incrSendCounter (snd $ unRA recipient) sender)
+
+-- | Have a pure computation run for 'n' simulator ticks
+compute ::
+  Int       -- ^ The number of ticks the computation should take
+  -> a      -- ^ The pure computation
+  -> Sim a  -- ^ Result of the pure computation
+compute i a = Sim $ suspend (Run i (return a))
 
 -- | Yield internal state to the simulator scheduler
 yield ::
@@ -381,17 +383,22 @@ runSTM ::
   -> Sim a
 runSTM = Sim . lift . lift
 
-data HandlerStub = HS ComponentId
+newtype HandlerStub = HS ComponentId
 
 instance ComponentInterface HandlerStub where
-  type State   HandlerStub = (ComponentId, TVar Dynamic, Dynamic -> Sim ())
-  type Receive HandlerStub = ()
+  type State   HandlerStub = (ComponentId, Dynamic -> Sim ())
+  type Receive HandlerStub = Dynamic
   type Send    HandlerStub = ()
   initState _              = undefined
   componentName (HS cId)   = "Asynchronous callback for component " ++
                                show cId
-  componentBehaviour _ (waitingFor, tv, handler) _ = Sim $ do
-    suspend (Request waitingFor return)
-    var <- lift . lift $ readTVar tv
+  componentBehaviour _ (waitingFor, handler) (Message cnt sender)
+    | returnAddress sender == waitingFor
+    = Sim $ do
+      runSim $ handler cnt
+      suspend Kill
+
+  componentBehaviour _ (waitingFor, handler) _  = Sim $ do
+    var <- suspend (Request waitingFor return)
     runSim $ handler var
     suspend Kill

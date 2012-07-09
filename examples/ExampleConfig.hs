@@ -119,6 +119,7 @@ instance ShowIO SimMetaData where
 instance ShowIO (ComponentStatus s) where
   showIO ReadyToIdle        = return $ text "Idle"
   showIO ReadyToRun         = return $ text "Running"
+  showIO (Running i _)      = return $ text "Running" <+> int i
   showIO (WaitingFor cId _) = return $ text "Waiting for" <> colon <+> text (show cId)
 
 instance ShowIO (Input a) where

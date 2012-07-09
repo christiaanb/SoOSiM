@@ -98,9 +98,10 @@ data SimMetaData
 data ComponentStatus a
   = ReadyToIdle
   -- ^ Component is doing nothing
-  | WaitingFor ComponentId (() -> Sim (State a))
+  | WaitingFor ComponentId (Dynamic -> Sim (State a))
   -- ^ Component is waiting for a message from 'ComponentId', will continue
   -- with computation ('(' -> 'SimM' a) once received
+  | Running Int (Sim (State a))
   | ReadyToRun
   -- ^ Component is busy doing computations
   | Killed
@@ -114,11 +115,11 @@ data Input a
   | Tick
   -- ^ Event send every simulation round
 
-newtype ReturnAddress = RA { unRA :: (ComponentId, TVar Dynamic) }
+newtype ReturnAddress = RA { unRA :: (ComponentId,ComponentId) }
 
 instance Show (Input a) where
-  show (Message _ (RA (sender,_))) = "Mesage from: " ++ show sender
-  show Tick                        = "Tick"
+  show (Message _ sender) = "Mesage from: " ++ (show . fst $ unRA sender)
+  show Tick               = "Tick"
 
 type NodeId   = Unique
 -- | Meta-data describing the functionaly of the computing node, currently
@@ -163,7 +164,7 @@ data Node
 newtype Sim a = Sim { runSim :: SimInternal a }
   deriving (Functor, Monad, State.MonadState SimState, MonadUnique)
 
-type SimInternal = Coroutine (RequestOrYield Unique ()) SimMonad
+type SimInternal = Coroutine (RequestOrYield Unique Dynamic) SimMonad
 
 instance State.MonadState SimState SimInternal where
   get   = lift get
@@ -175,11 +176,13 @@ instance MonadUnique SimInternal where
 data RequestOrYield request response x
   = Request request (response -> x)
   | Yield   x
+  | Run     Int     x
   | Kill
 
 instance Functor (RequestOrYield x f) where
   fmap f (Request x g) = Request x (f . g)
   fmap f (Yield y)     = Yield (f y)
+  fmap f (Run x y)     = Run x (f y)
   fmap _ Kill          = Kill
 
 -- | The internal monad of the simulator is currently a simple state-monad
