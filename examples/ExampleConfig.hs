@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
-module ExampleConfig where
+--module ExampleConfig where
 
 import           Control.Concurrent.Supply
 import           Control.Concurrent.STM
@@ -9,6 +9,7 @@ import qualified Data.Map                   as Map
 import           SoOSiM
 import           SoOSiM.Types
 import           Text.PrettyPrint.HughesPJ
+import           Criterion.Main
 
 import           HeatMap.Application
 import           HeatMap.Types
@@ -19,8 +20,19 @@ import MemoryManager.Types
 import Scheduler
 import Scheduler.Types
 
-main :: IO ()
+--main = defaultMain [
+--        bgroup "sim" [ bench "100" $ whnfIO (mainT 100)
+--                     , bench "1000" $ whnfIO (mainT 1000)
+--                     , bench "5000" $ whnfIO (mainT 5000)
+--                     ]
+--                    ]
 main = do
+  s <- mainT 1740
+  loopStep 1740 s
+  -- (fmap render $ showIO s) >>= putStrLn
+
+mainT :: Int -> IO SimState
+mainT n = do
     supply <- newSupply
     let (node0id,supply')       = freshId supply
     let (component0id,supply'') = freshId supply'
@@ -36,21 +48,37 @@ main = do
                   IM.empty [component0id]
     let simState = SimState node0id component0id
                     (IM.fromList [(node0id,node0)]) supply''
-    loop 0 simState
-    return ()
+    loop n simState
   where
     loop ::
       Int
       -> SimState
-      -> IO ()
+      -> IO SimState
+    loop 0 simState = do
+--        (fmap render $ showIO simState) >>= putStrLn
+        return simState
     loop n simState = do
-      putStrLn $ "Cycle: " ++ show n
-      (fmap render $ showIO simState) >>= putStrLn
+      -- putStrLn $ "Cycle: " ++ show n
+      -- (fmap render $ showIO simState) >>= putStrLn
       simState' <- tick simState
-      c <- getChar
-      case c of
-        'n' -> loop (n+1) simState'
-        _   -> return ()
+      loop (n-1) simState'
+      -- c <- getChar
+      -- case c of
+      --   'n' -> loop (n+1) simState'
+      --  _   -> return ()
+
+loopStep ::
+  Int
+  -> SimState
+  -> IO ()
+loopStep n simState = do
+  putStrLn $ "Cycle: " ++ show n
+  (fmap render $ showIO simState) >>= putStrLn
+  simState' <- tick simState
+  c <- getChar
+  case c of
+      'n' -> loopStep (n+1) simState'
+      _   -> return ()
 
 data Initializer = Initializer
 

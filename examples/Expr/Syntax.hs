@@ -10,6 +10,8 @@ data Ref a
 data a :-> b
 infixr 5 :->
 
+data Fut a
+
 class EDSL exp where
      lam :: (exp a -> exp b) -> exp (a :-> b)
      lam = lamS
@@ -30,6 +32,12 @@ class EDSL exp where
      ref :: exp a -> exp (Ref a)
      deref :: exp (Ref a) -> exp a
      update :: exp (Ref a) -> exp a -> exp UnitT
+
+class ParDSL exp where
+  iVar    :: exp (Fut a)
+  rdIVar  :: exp (Fut a) -> exp a
+  wrIVar  :: exp (Fut a) -> exp a -> exp UnitT
+  par     :: exp UnitT -> exp UnitT
 
 instance EDSL exp => Num (exp IntT) where
   fromInteger = int . fromInteger

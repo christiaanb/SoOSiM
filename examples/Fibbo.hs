@@ -13,14 +13,14 @@ import Expr.SoOSSemantics
 fibbo = fix $ \fib ->
   lam $ \n ->
     newvar 0 $ \n1 ->
-    newvar 0 $ \n2 ->
-    newvar 0 $ \n3 ->
+    newIVar $ \n2 ->
+    newIVar $ \n3 ->
       update n1 n >:
       if_ (lt (deref n1) 2)
         1
-        ( update n2 (app fib ((deref n1) - 1)) >:
-          update n3 (app fib ((deref n1) - 2)) >:
-          (deref n2) + (deref n3)
+        ( par (wrIVar n2 (app fib ((deref n1) - 1))) >:
+          par (wrIVar n3 (app fib ((deref n1) - 2))) >:
+          (rdIVar n2) + (rdIvar n3)
         )
 
 fibbo5 :: EDSL exp => exp IntT

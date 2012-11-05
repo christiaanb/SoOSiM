@@ -34,8 +34,11 @@ componentNode ::
   -> SimMonad NodeId
 componentNode cId = do
   ns <- gets nodes
-  let (node:_) = IM.elems
-               $ IM.filter (\n -> IM.member cId (nodeComponents n)) ns
+  let foundNodes = IM.elems
+                 $ IM.filter (\n -> IM.member cId (nodeComponents n)) ns
+  let node = case foundNodes of
+              (n:_) -> n
+              []    -> error ("Component '" ++ show cId ++ "' not found in: " ++ show (IM.map nodeComponents ns))
   return (nodeId node)
 
 updateMsgBuffer ::

@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Expr.SimpleSemantics where
 
+import Control.Concurrent
 import Control.Monad.Trans
 import Control.Monad.State
 import Data.IORef
@@ -16,6 +17,7 @@ type instance Sem m BoolT = Bool
 type instance Sem m UnitT = ()
 type instance Sem m (Ref a) = IORef (Int, Sem m a)
 type instance Sem m (a :-> b) = m (Sem m a) -> m (Sem m b)
+type instance Sem m (Fut a) = IORef (Int, Bool, Sem m a)
 
 newtype S m a = S { unS :: m (Sem m a) }
 
@@ -83,5 +85,29 @@ instance EDSL (S SState) where
                   (i,_) <- liftIO (readIORef a)
                   liftIO $ putStrLn ("Updating: " ++ show i)
                   liftIO (modifyIORef a (\(i,_) -> (i,b)))
+
+instance ParDSL (S SState) where
+  iVar = S $ do
+    i <- get
+    modify (+1)
+    liftIO (newIORef (i,False,undefined))
+
+  rdIVar x = S $ do
+    a <- unS x
+    (i,wr,a') <- liftIO (readIORef a)
+    if wr then return a' else error "IVar not written"
+
+  wrIVar x y = S $ do
+    a <- unS x
+    b <- unS y
+    (i,wr,a') <- liftIO (readIORef a)
+    if wr
+      then error "IVar already written"
+      else liftIO (modifyIORef a (\(i,_,_) -> (i,True,b)))
+
+  par x = S $ do
+    let a = unS x
+    _ <- liftIO (forkIO (evalStateT a (0::Int)))
+    return ()
 
 runExpr e = evalStateT (unS e) (0 :: Int) >>= print

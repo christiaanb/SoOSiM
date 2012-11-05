@@ -39,12 +39,12 @@ Library
   ghc-options:      -Wall
 
   Build-depends:    base              >= 4.3.1.0 && < 4.6,
-                    concurrent-supply >= 0.1.1   && < 0.2,
-                    containers        >= 0.4.0.0 && < 0.5,
-                    monad-coroutine   >= 0.7.1   && < 0.8,
-                    mtl               >= 2.0.1.0 && < 2.1,
-                    stm               >= 2.3     && < 2.4,
-                    transformers      >= 0.2.2.0 && < 2.3
+                    concurrent-supply >= 0.1.1,
+                    containers        >= 0.4.0.0,
+                    monad-coroutine   >= 0.7.1,
+                    mtl               >= 2.0.1.0,
+                    stm               >= 2.3,
+                    transformers      >= 0.2.2.0
 
   Other-modules:    SoOSiM.SimMonad,
                     SoOSiM.Simulator,

@@ -83,6 +83,9 @@ data ComponentContext = forall s . (ComponentInterface s, Typeable (Receive s)) 
      -- ^ Statistical information regarding a component
      }
 
+instance Show ComponentContext where
+  show cc = show (componentId cc) ++ ": " ++ (unlines $ traceMsgs cc)
+
 data SimMetaData
   = SimMetaData
   { cyclesRunning :: Int

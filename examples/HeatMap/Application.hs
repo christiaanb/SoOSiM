@@ -141,7 +141,7 @@ heatMapWorker hmwState (Message Compute retChan) = do
   -- Calculate value
   let newValV = sum ((fromIntegral $ length vert) * cVal:vertVal) * dy2i
   let newValH = sum ((fromIntegral $ length hor) * cVal:horVal) * dx2i
-  newVal <- calculate 5 ((newValV + newValH) * dt)
+  newVal <- compute 5 ((newValV + newValH) * dt)
 
   -- Write array value
   invokeAsync MemoryManager memManagerId

@@ -13,6 +13,8 @@ letS x y = (lamS y) `app` x
 newvar x y = letS (ref x) y
 x >: y     = letS x (\_ -> y)
 
+newIVar y  = letS iVar y
+
 infixr 5 >:
 
 fix' = lam $ \f ->
