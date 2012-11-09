@@ -1,3 +1,6 @@
+#ifndef CODE_ADAPTER
+#define CODE_ADAPTER
+
 #include "SoOSiM.h"
 #include "common.h"
 
@@ -15,3 +18,5 @@ public:
   standarData_t dataStandardisation (data_t d);
   nativeData_t dataNativisation (data_t d);
 };
+
+#endif

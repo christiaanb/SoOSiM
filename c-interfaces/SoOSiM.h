@@ -1,14 +1,22 @@
+#ifndef SOOSIM_H
+#define SOOSIM_H
+
+typedef int nodeId;
+typedef int componentId;
+
 // Get the unique id of your component
-int getComponentId();
+componentId getComponentId();
 
 // Get the unique id of the node that is hosting your component
-int getNodeId();
+nodeId getNodeId();
 
 // Get the current simulation cycle
 int getTime();
 
 // Write memory of local node
-void writeMemory(int address, char* val);
+void writeMemory(long address, char* val);
 
 // Read memory of local node
-char* readMemory(int address);
+char* readMemory(long address);
+
+#endif
