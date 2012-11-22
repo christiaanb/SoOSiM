@@ -9,7 +9,7 @@ import qualified Data.Map                   as Map
 import           SoOSiM
 import           SoOSiM.Types
 import           Text.PrettyPrint.HughesPJ
-import           Criterion.Main
+--import           Criterion.Main
 
 import           HeatMap.Application
 import           HeatMap.Types
@@ -27,8 +27,8 @@ import Scheduler.Types
 --                     ]
 --                    ]
 main = do
-  s <- mainT 1740
-  loopStep 1740 s
+  s <- mainT 0
+  loopStep 0 s
   -- (fmap render $ showIO s) >>= putStrLn
 
 mainT :: Int -> IO SimState
