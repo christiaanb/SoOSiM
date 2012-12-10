@@ -15,6 +15,7 @@ module SoOSiM.SimMonad
   , traceMsg
   , createNode
   , compute
+  , stop
   -- * Advanced API
   , runSTM
   , getComponentId
@@ -23,6 +24,7 @@ module SoOSiM.SimMonad
   -- * Specialized API
   , createComponentN
   , createComponentNP
+  , createComponentNPS
   , invokeS
   , invokeAsyncS
   , respondS
@@ -264,6 +266,12 @@ yield ::
   a
   -> Sim a
 yield s = Sim $ suspend (Yield (return s))
+
+-- | Stop the component
+-- NB I cannot be resumed!
+stop ::
+  Sim a
+stop = Sim $ suspend Kill
 
 -- | Get the component id of your component
 getComponentId ::
