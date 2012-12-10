@@ -1,17 +1,21 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE TypeFamilies        #-}
 module SoOSiM.Simulator where
 
-import           Control.Applicative     ((<$>),(<*>))
-import           Control.Concurrent.STM  (TVar,atomically,readTVar,writeTVar)
-import           Control.Monad.Coroutine (resume)
-import           Control.Monad.State     (execStateT,gets,lift,modify)
-import           Data.Dynamic            (Dynamic,Typeable)
-import qualified Data.IntMap             as IM
-import qualified Data.Traversable        as T
+import           Control.Applicative       ((<$>),(<*>))
+import           Control.Concurrent.STM    (TVar,atomically,newTVarIO,readTVar,writeTVar)
+import           Control.Concurrent.Supply (freshId,newSupply)
+import           Control.Monad.Coroutine   (resume)
+import           Control.Monad.State       (execStateT,gets,lift,modify)
+import           Data.Dynamic              (Dynamic,Typeable)
+import qualified Data.IntMap               as IM
+import qualified Data.Map                  as Map
+import qualified Data.Traversable          as T
 
 import SoOSiM.Simulator.Util
+import SoOSiM.SimMonad
 import SoOSiM.Types
 
 tick :: SimState -> IO SimState
@@ -21,6 +25,7 @@ tick = atomically . execStateT tick'
     tick' = do
       ns <- gets nodes
       _ <- T.mapM executeNode ns
+      modify (\s -> s {simClk = simClk s + 1})
       return ()
 
 executeNode ::
@@ -138,3 +143,34 @@ handleInput iface metaTV _ state msg = do
         (componentBehaviour iface state (fromDynMsg iface msg))
         state
   return (r,Nothing)
+
+initSim :: Sim () -> IO SimState
+initSim s = do
+  supply <- newSupply
+  let (node0id,supply')       = freshId supply
+      (component0id,supply'') = freshId supply'
+      emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
+  statusTV <- newTVarIO ReadyToRun
+  stateTV  <- newTVarIO s
+  bufferTV <- newTVarIO [Tick]
+  emptyMetaTV <- newTVarIO emptyMeta
+  let component0CC = CC Initializer component0id component0id statusTV
+                        stateTV bufferTV [] emptyMetaTV
+      node0 = Node node0id NodeInfo Map.empty
+                   (IM.fromList [(component0id,component0CC)])
+                   IM.empty [component0id]
+      simState = SimState node0id component0id
+                          (IM.fromList [(node0id,node0)]) supply'' 0
+  return simState
+
+data Initializer = Initializer
+
+instance ComponentInterface Initializer where
+  type Receive Initializer    = ()
+  type Send    Initializer    = ()
+  type State   Initializer    = Sim ()
+  initState                   = const undefined
+  componentName _             = "Simulator Initialization"
+  componentBehaviour _ s Tick = s >> stop
+  componentBehaviour _ s _    = yield s
+

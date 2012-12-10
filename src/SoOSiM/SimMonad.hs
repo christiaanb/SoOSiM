@@ -21,6 +21,7 @@ module SoOSiM.SimMonad
   , getComponentId
   , getNodeId
   , componentCreator
+  , getTime
   -- * Specialized API
   , createComponentN
   , createComponentNP
@@ -390,6 +391,10 @@ runSTM ::
   STM a
   -> Sim a
 runSTM = Sim . lift . lift
+
+getTime ::
+  Sim Int
+getTime = Sim $ gets simClk
 
 newtype HandlerStub = HS ComponentId
 

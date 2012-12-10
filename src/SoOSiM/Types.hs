@@ -204,6 +204,8 @@ data SimState
   -- ^ The set of nodes comprising the entire system
   , uniqueSupply     :: Supply
   -- ^ Unlimited supply of unique values
+  , simClk           :: Int
+  -- ^ Simulation time
   }
 
 instance MonadUnique SimMonad where
