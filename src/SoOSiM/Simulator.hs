@@ -160,7 +160,7 @@ initSim s = do
                    (IM.fromList [(component0id,component0CC)])
                    IM.empty [component0id]
       simState = SimState node0id component0id
-                          (IM.fromList [(node0id,node0)]) supply'' 0
+                          (IM.fromList [(node0id,node0)]) supply'' 0 True
   return simState
 
 data Initializer = Initializer

@@ -75,14 +75,19 @@ incrSendCounter recipient sender node = do
 
 updateTraceBuffer ::
   ComponentId
+  -> Int
   -> String
   -> Node
   -> Node
-updateTraceBuffer cmpId msg node =
+updateTraceBuffer cmpId timeStamp msg node =
     node { nodeComponents = f (nodeComponents node)}
   where
     f ccs = IM.adjust g cmpId ccs
-    g cc  = cc { traceMsgs = msg:(traceMsgs cc)}
+    g cc@(CC iface _ _ _ _ _ _ _) = cc {traceMsgs = (traceMsgs) cc ++ [msg']}
+      where msg' = concat [ "[" ++ show timeStamp ++ "] "
+                          , componentName iface ++ ": "
+                          , msg
+                          ]
 
 incrIdleCount, incrWaitingCount, incrRunningCount ::
   TVar SimMetaData

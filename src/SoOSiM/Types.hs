@@ -206,6 +206,7 @@ data SimState
   -- ^ Unlimited supply of unique values
   , simClk           :: Int
   -- ^ Simulation time
+  , running          :: Bool
   }
 
 instance MonadUnique SimMonad where

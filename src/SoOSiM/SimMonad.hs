@@ -7,6 +7,7 @@ module SoOSiM.SimMonad
     createComponent
   , invoke
   , invokeAsync
+  , notify
   , respond
   , yield
   , readMemory
@@ -22,12 +23,14 @@ module SoOSiM.SimMonad
   , getNodeId
   , componentCreator
   , getTime
+  , stopSim
   -- * Specialized API
   , createComponentN
   , createComponentNP
   , createComponentNPS
   , invokeS
   , invokeAsyncS
+  , notifyS
   , respondS
   , readMemoryN
   , writeMemoryN
@@ -218,6 +221,42 @@ invokeAsyncS _ parentIdM recipient content handler = Sim $ do
     unmarshallAsync :: Dynamic -> Send iface
     unmarshallAsync = unmarshall "invokeAsyncS"
 
+{-# INLINE notify #-}
+-- | Notify another component
+notify ::
+  (ComponentInterface iface, Typeable (Receive iface))
+  => iface
+  -- ^ Interface type
+  -> ComponentId
+  -- ^ ComponentId of callee
+  -> Receive iface
+  -- ^ Argument
+  -> Sim ()
+notify iface recipient content = notifyS iface Nothing recipient content
+
+-- | Notify another component
+notifyS ::
+  forall iface
+  . (ComponentInterface iface
+    , Typeable (Receive iface))
+  => iface
+  -- ^ Interface type
+  -> Maybe ComponentId
+  -- ^ Caller, leave 'Nothing' to set to current module
+  -> ComponentId
+  -- ^ Callee
+  -> Receive iface
+  -- ^ Argument
+  -> Sim ()
+notifyS _ senderM recipient content = Sim $ do
+  sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
+  let message  = Message (toDyn content) (RA (sender,sender))
+
+  rNodeId <- lift $ componentNode recipient
+  sNodeId <- lift $ componentNode sender
+  lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
+  lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
+
 {-# INLINE respond #-}
 -- | Respond to an invocation
 respond ::
@@ -260,7 +299,9 @@ compute ::
   Int       -- ^ The number of ticks the computation should take
   -> a      -- ^ The pure computation
   -> Sim a  -- ^ Result of the pure computation
-compute i a = Sim $ suspend (Run i (return a))
+compute i a
+  | i < 1     = return a
+  | otherwise = Sim $ suspend (Run i (return a))
 
 -- | Yield internal state to the simulator scheduler
 yield ::
@@ -383,9 +424,10 @@ traceMsg ::
   String
   -> Sim ()
 traceMsg msg = Sim $ do
+  t    <- gets simClk
   node <- gets currentNode
   comp <- gets currentComponent
-  lift $ modifyNode node (updateTraceBuffer comp msg)
+  lift $ modifyNode node (updateTraceBuffer comp t msg)
 
 runSTM ::
   STM a
@@ -395,6 +437,10 @@ runSTM = Sim . lift . lift
 getTime ::
   Sim Int
 getTime = Sim $ gets simClk
+
+stopSim ::
+  Sim ()
+stopSim = Sim $ modify (\s -> s {running = False})
 
 newtype HandlerStub = HS ComponentId
 
