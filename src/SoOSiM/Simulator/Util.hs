@@ -49,7 +49,7 @@ updateMsgBuffer ::
   -> Node
   -- ^ Node containing the component
   -> SimMonad ()
-updateMsgBuffer recipient msg@(Message _ sender) node = do
+updateMsgBuffer recipient msg@(Message _ _ sender) node = do
     let ce = (nodeComponents node) IM.! recipient
     lift $ modifyTVar (msgBuffer ce) (\msgs -> msgs ++ [msg])
     lift $ modifyTVar (simMetaData ce)
@@ -105,8 +105,8 @@ fromDynMsg ::
   => i
   -> Input Dynamic
   -> Input (Receive i)
-fromDynMsg _ (Message content retChan) =
-  Message (unmarshall "fromDynMsg" content) retChan
+fromDynMsg _ (Message mTime content retChan) =
+  Message mTime (unmarshall "fromDynMsg" content) retChan
 fromDynMsg _ Tick = Tick
 
 returnAddress ::

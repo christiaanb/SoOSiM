@@ -110,9 +110,11 @@ data ComponentStatus a
   | Killed
   -- ^ Module scheduled for deletion
 
+type MsgTime = Int
+
 -- | Events send to components by the simulator
 data Input a
-  = Message a ReturnAddress
+  = Message MsgTime a ReturnAddress
   -- ^ A message send another component: the field argument is the
   -- 'ComponentId' of the sender, the second field the message content
   | Tick
@@ -121,8 +123,8 @@ data Input a
 newtype ReturnAddress = RA { unRA :: (ComponentId,ComponentId) }
 
 instance Show (Input a) where
-  show (Message _ sender) = "Mesage from: " ++ (show . fst $ unRA sender)
-  show Tick               = "Tick"
+  show (Message mTime _ sender) = "Mesage(" ++ show mTime ++ ") from: " ++ (show . fst $ unRA sender)
+  show Tick                     = "Tick"
 
 type NodeId   = Unique
 -- | Meta-data describing the functionaly of the computing node, currently

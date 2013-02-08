@@ -158,8 +158,9 @@ invokeS ::
   -> Sim (Send iface)
   -- ^ Response from recipient
 invokeS _ senderM recipient content = Sim $ do
+  t            <- gets simClk
   sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
-  let message  = Message (toDyn content) (RA (sender,sender))
+  let message  = Message t (toDyn content) (RA (sender,sender))
 
   rNodeId <- lift $ componentNode recipient
   sNodeId <- lift $ componentNode sender
@@ -210,8 +211,9 @@ invokeAsyncS _ parentIdM recipient content handler = Sim $ do
   sender       <- runSim $ createComponentNPS (Just nodeId) parentIdM
                     (Just (recipient,handler . unmarshallAsync))
                     (HS parentId)
+  t            <- gets simClk
 
-  let message  = Message (toDyn content) (RA (sender,parentId))
+  let message  = Message t (toDyn content) (RA (sender,parentId))
 
   rNodeId <- lift $ componentNode recipient
   sNodeId <- lift $ componentNode parentId
@@ -250,7 +252,8 @@ notifyS ::
   -> Sim ()
 notifyS _ senderM recipient content = Sim $ do
   sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
-  let message  = Message (toDyn content) (RA (sender,sender))
+  t            <- gets simClk
+  let message  = Message t (toDyn content) (RA (sender,sender))
 
   rNodeId <- lift $ componentNode recipient
   sNodeId <- lift $ componentNode sender
@@ -288,7 +291,8 @@ respondS ::
   -- ^ Call returns immediately
 respondS _ senderM recipient content = Sim $ do
   sender <- fmap (`fromMaybe` senderM) $ gets currentComponent
-  let message = Message (toDyn content) (RA (sender,sender))
+  t      <- gets simClk
+  let message = Message t (toDyn content) (RA (sender,sender))
   rNodeId <- lift $ componentNode (fst $ unRA recipient)
   sNodeId <- lift $ componentNode sender
   lift $ modifyNodeM rNodeId (updateMsgBuffer (fst $ unRA recipient) message)
@@ -451,7 +455,7 @@ instance ComponentInterface HandlerStub where
   initState _              = undefined
   componentName (HS cId)   = "Asynchronous callback for component " ++
                                show cId
-  componentBehaviour _ (waitingFor, handler) (Message cnt sender)
+  componentBehaviour _ (waitingFor, handler) (Message _ cnt sender)
     | returnAddress sender == waitingFor
     = Sim $ do
       runSim $ handler cnt

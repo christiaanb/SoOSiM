@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE PatternGuards       #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -64,7 +65,9 @@ executeComponent (CC token cId _ statusTV stateTV bufferTV _ metaTV) = do
     (WaitingFor _ _, []) -> do
       incrWaitingCount metaTV
       return ((status,state),buffer)
-    _ -> runUntilNothingM handleInput token metaTV status state buffer
+    _ -> do
+      t <- gets simClk
+      runUntilNothingM (handleInput t) token metaTV status state buffer
 
   lift $ writeTVar statusTV status' >>
          writeTVar stateTV  state'  >>
@@ -108,7 +111,9 @@ runUntilNothingM _ _     _   st s []         = return ((st, s), [])
 runUntilNothingM f iface mTV st s (inp:inps) = do
   (r, inpM) <- f iface mTV st s inp
   case inpM of
-    Nothing -> return (r,inps)
+    Nothing -> do
+      (r',inps') <- runUntilNothingM f iface mTV (fst r) (snd r) inps
+      return (r',inps')
     Just _ -> do
       (r',inps') <- runUntilNothingM f iface mTV st s inps
       return (r',inp:inps')
@@ -116,7 +121,8 @@ runUntilNothingM f iface mTV st s (inp:inps) = do
 -- | Update component context according to simulator event
 handleInput ::
   (ComponentInterface iface, Typeable (Receive iface))
-  => iface
+  => Int
+  -> iface
   -> TVar SimMetaData
   -> ComponentStatus iface
   -- ^ Current component context
@@ -127,9 +133,10 @@ handleInput ::
   -- ^ Returns tuple of: ((potentially updated) component context,
   -- (potentially update) component state, 'Nothing' when event is consumed;
   -- 'Just' 'ComponentInput' otherwise)
-handleInput _ metaTV st@(WaitingFor waitingFor f) state
-  msg@(Message content sender)
+handleInput t _ metaTV st@(WaitingFor waitingFor f) state
+  msg@(Message mTime content sender)
   | waitingFor == (fst $ unRA sender)
+  , mTime < t
   = do
     incrRunningCount metaTV
     r <- handleResult (f content) state
@@ -137,12 +144,26 @@ handleInput _ metaTV st@(WaitingFor waitingFor f) state
   | otherwise
   = incrWaitingCount metaTV >> return ((st, state), Just msg)
 
-handleInput iface metaTV _ state msg = do
-  incrRunningCount metaTV
-  r <- handleResult
-        (componentBehaviour iface state (fromDynMsg iface msg))
-        state
-  return (r,Nothing)
+handleInput t iface metaTV st state
+  msg@(Message mTime _ _)
+  | mTime < t
+  = do
+    incrRunningCount metaTV
+    r <- handleResult
+          (componentBehaviour iface state (fromDynMsg iface msg))
+          state
+    return (r,Nothing)
+  | otherwise
+  = return ((st,state),Just msg)
+
+handleInput _ iface metaTV _ state
+  msg@(Tick)
+  = do
+    incrRunningCount metaTV
+    r <- handleResult
+          (componentBehaviour iface state (fromDynMsg iface msg))
+          state
+    return (r,Nothing)
 
 initSim :: Sim () -> IO SimState
 initSim s = do
