@@ -77,14 +77,14 @@ data ComponentContext = forall s . (ComponentInterface s, Typeable (Receive s)) 
      -- ^ State internal to the component
      , msgBuffer          :: TVar [Input Dynamic]
      -- ^ Message waiting to be processed by the component
-     , traceMsgs          :: [String]
+     , traceMsgs          :: [(String, Maybe String)]
      -- ^ Trace message buffer
      , simMetaData        :: TVar SimMetaData
      -- ^ Statistical information regarding a component
      }
 
 instance Show ComponentContext where
-  show cc = show (componentId cc) ++ ": " ++ (unlines $ traceMsgs cc)
+  show cc = show (componentId cc) ++ ": " ++ (unlines $ map fst $ traceMsgs cc)
 
 data SimMetaData
   = SimMetaData

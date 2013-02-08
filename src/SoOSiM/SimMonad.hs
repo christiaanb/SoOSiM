@@ -14,6 +14,7 @@ module SoOSiM.SimMonad
   , writeMemory
   , componentLookup
   , traceMsg
+  , traceMsgTag
   , createNode
   , compute
   , stop
@@ -431,7 +432,17 @@ traceMsg msg = Sim $ do
   t    <- gets simClk
   node <- gets currentNode
   comp <- gets currentComponent
-  lift $ modifyNode node (updateTraceBuffer comp t msg)
+  lift $ modifyNode node (updateTraceBuffer comp t msg Nothing)
+
+traceMsgTag ::
+  String
+  -> String
+  -> Sim ()
+traceMsgTag msg tag = Sim $ do
+  t    <- gets simClk
+  node <- gets currentNode
+  comp <- gets currentComponent
+  lift $ modifyNode node (updateTraceBuffer comp t msg (Just tag))
 
 runSTM ::
   STM a
