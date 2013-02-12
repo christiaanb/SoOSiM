@@ -31,15 +31,15 @@ modifyNodeM i f = do
 
 componentNode ::
   ComponentId
-  -> SimMonad NodeId
+  -> SimMonad (Maybe NodeId)
 componentNode cId = do
   ns <- gets nodes
   let foundNodes = IM.elems
                  $ IM.filter (\n -> IM.member cId (nodeComponents n)) ns
   let node = case foundNodes of
-              (n:_) -> n
-              []    -> error ("Component '" ++ show cId ++ "' not found in: " ++ show (IM.map nodeComponents ns))
-  return (nodeId node)
+               (n:_) -> Just n
+               []    -> Nothing
+  return (fmap nodeId node)
 
 updateMsgBuffer ::
   ComponentId
@@ -100,6 +100,23 @@ incrWaitingCount tv = lift $ modifyTVar tv (\mdata -> mdata
                               {cyclesWaiting = cyclesWaiting mdata + 1})
 incrRunningCount tv = lift $ modifyTVar tv (\mdata -> mdata
                               {cyclesRunning = cyclesRunning mdata + 1})
+
+sendMessage ::
+  ComponentId
+  -> ComponentId
+  -> Input Dynamic
+  -> SimMonad ()
+sendMessage sender recipient message = do
+  rNodeIdM <- componentNode recipient
+  sNodeIdM <- componentNode sender
+  maybe' sNodeIdM (return ())    $ \sNodeId -> modifyNodeM sNodeId (incrSendCounter recipient sender)
+  maybe' rNodeIdM (error errMsg) $ \rNodeId -> modifyNodeM rNodeId (updateMsgBuffer recipient message)
+  where
+    errMsg = concat [ "Component: "
+                    , show sender
+                    , " tried to invoke non-existent component: "
+                    , show recipient
+                    ]
 
 
 fromDynMsg ::

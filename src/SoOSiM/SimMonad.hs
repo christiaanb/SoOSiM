@@ -162,12 +162,7 @@ invokeS _ senderM recipient content = Sim $ do
   t            <- gets simClk
   sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
   let message  = Message t (toDyn content) (RA (sender,sender))
-
-  rNodeId <- lift $ componentNode recipient
-  sNodeId <- lift $ componentNode sender
-  lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
-  lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
-
+  lift $ sendMessage sender recipient message
   var <- suspend (Request recipient return)
   return (unmarshall "invoke" var)
 
@@ -215,11 +210,8 @@ invokeAsyncS _ parentIdM recipient content handler = Sim $ do
   t            <- gets simClk
 
   let message  = Message t (toDyn content) (RA (sender,parentId))
+  lift $ sendMessage parentId recipient message
 
-  rNodeId <- lift $ componentNode recipient
-  sNodeId <- lift $ componentNode parentId
-  lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
-  lift $ modifyNodeM sNodeId (incrSendCounter recipient parentId)
   where
     unmarshallAsync :: Dynamic -> Send iface
     unmarshallAsync = unmarshall "invokeAsyncS"
@@ -255,11 +247,7 @@ notifyS _ senderM recipient content = Sim $ do
   sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
   t            <- gets simClk
   let message  = Message t (toDyn content) (RA (sender,sender))
-
-  rNodeId <- lift $ componentNode recipient
-  sNodeId <- lift $ componentNode sender
-  lift $ modifyNodeM rNodeId (updateMsgBuffer recipient message)
-  lift $ modifyNodeM sNodeId (incrSendCounter recipient sender)
+  lift $ sendMessage sender recipient message
 
 {-# INLINE respond #-}
 -- | Respond to an invocation
@@ -294,10 +282,7 @@ respondS _ senderM recipient content = Sim $ do
   sender <- fmap (`fromMaybe` senderM) $ gets currentComponent
   t      <- gets simClk
   let message = Message t (toDyn content) (RA (sender,sender))
-  rNodeId <- lift $ componentNode (fst $ unRA recipient)
-  sNodeId <- lift $ componentNode sender
-  lift $ modifyNodeM rNodeId (updateMsgBuffer (fst $ unRA recipient) message)
-  lift $ modifyNodeM sNodeId (incrSendCounter (snd $ unRA recipient) sender)
+  lift $ sendMessage sender (fst $ unRA recipient) message
 
 -- | Have a pure computation run for 'n' simulator ticks
 compute ::

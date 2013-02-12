@@ -32,3 +32,7 @@ unmarshall msg d = fromDyn d
   where
     resDyn :: Dynamic
     resDyn = toDyn (undefined :: a)
+
+maybe' :: Maybe a -> b -> (a -> b) -> b
+maybe' Nothing b _  = b
+maybe' (Just a) _ f = f a
