@@ -50,14 +50,14 @@ executeComponent (CC token cId _ statusTV stateTV bufferTV _ metaTV) = do
     (Killed, _) -> return ((status,state),buffer)
     (Running 0 c, _) -> do
       incrRunningCount metaTV
-      r <- handleResult c state
+      r <- handleResult token c state
       return (r,buffer)
     (Running n c, _) -> do
       incrRunningCount metaTV
       return ((Running (n-1) c,state),buffer)
     (ReadyToRun, []) -> do
       incrRunningCount metaTV
-      r <- handleResult (componentBehaviour token state Tick) state
+      r <- handleResult token (componentBehaviour token state Tick) state
       return (r,[])
     (ReadyToIdle, []) -> do
       incrIdleCount metaTV
@@ -85,10 +85,11 @@ resumeYield c = do
 
 handleResult ::
   ComponentInterface iface
-  => Sim (State iface)
+  => iface
+  -> Sim (State iface)
   -> State iface
   -> SimMonad (ComponentStatus iface, State iface)
-handleResult f state = do
+handleResult iface f state = do
   res <- resume $ runSim f
   case res of
     Right state'       -> return (ReadyToRun            , state')
@@ -99,7 +100,10 @@ handleResult f state = do
       nId <- gets currentNode
       cId <- gets currentComponent
       modifyNode nId
-        (\n -> n {nodeComponents = IM.delete cId (nodeComponents n)})
+        (\n -> n { nodeComponents      = IM.delete cId (nodeComponents n)
+                 , nodeComponentLookup = Map.delete (componentName iface) (nodeComponentLookup n)
+                 }
+        )
       return (Killed, state)
 
 runUntilNothingM ::
@@ -133,13 +137,13 @@ handleInput ::
   -- ^ Returns tuple of: ((potentially updated) component context,
   -- (potentially update) component state, 'Nothing' when event is consumed;
   -- 'Just' 'ComponentInput' otherwise)
-handleInput t _ metaTV st@(WaitingFor waitingFor f) state
+handleInput t iface metaTV st@(WaitingFor waitingFor f) state
   msg@(Message mTime content sender)
   | waitingFor == (fst $ unRA sender)
   , mTime < t
   = do
     incrRunningCount metaTV
-    r <- handleResult (f content) state
+    r <- handleResult iface (f content) state
     return (r,Nothing)
   | otherwise
   = incrWaitingCount metaTV >> return ((st, state), Just msg)
@@ -149,7 +153,7 @@ handleInput t iface metaTV st state
   | mTime < t
   = do
     incrRunningCount metaTV
-    r <- handleResult
+    r <- handleResult iface
           (componentBehaviour iface state (fromDynMsg iface msg))
           state
     return (r,Nothing)
@@ -160,7 +164,7 @@ handleInput _ iface metaTV _ state
   msg@(Tick)
   = do
     incrRunningCount metaTV
-    r <- handleResult
+    r <- handleResult iface
           (componentBehaviour iface state (fromDynMsg iface msg))
           state
     return (r,Nothing)
