@@ -169,11 +169,10 @@ handleInput _ iface metaTV _ state
           state
     return (r,Nothing)
 
-initSim :: Sim () -> IO SimState
-initSim s = do
+initSim :: NodeId -> Sim () -> IO SimState
+initSim node0id s = do
   supply <- newSupply
-  let (node0id,supply')       = freshId supply
-      (component0id,supply'') = freshId supply'
+  let (component0id,supply') = freshId supply
       emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
   statusTV <- newTVarIO ReadyToRun
   stateTV  <- newTVarIO s
@@ -185,7 +184,7 @@ initSim s = do
                    (IM.fromList [(component0id,component0CC)])
                    IM.empty [component0id]
       simState = SimState node0id component0id
-                          (IM.fromList [(node0id,node0)]) supply'' 0 True
+                          (IM.fromList [(node0id,node0)]) supply' 0 True
   return simState
 
 data Initializer = Initializer
