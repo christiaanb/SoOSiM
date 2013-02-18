@@ -19,6 +19,7 @@ module SoOSiM.SimMonad
   , compute
   , stop
   -- * Advanced API
+  , createNodeN
   , runSTM
   , getComponentId
   , getNodeId
@@ -320,9 +321,18 @@ createNode ::
   Sim NodeId -- ^ NodeId of the created node
 createNode = Sim $ do
   nodeId <- getUniqueM
-  let newNode = Node nodeId NodeInfo Map.empty IM.empty IM.empty []
-  modify (\s -> s {nodes = IM.insert nodeId newNode (nodes s)})
+  runSim $ createNodeN nodeId
   return nodeId
+
+-- | Create a new node with a specific NodeId
+createNodeN ::
+  NodeId
+  -> Sim ()
+createNodeN nodeId = Sim $
+  modify (\s -> s {nodes = IM.insert nodeId newNode (nodes s)})
+  where
+    newNode = Node nodeId NodeInfo Map.empty IM.empty IM.empty []
+
 
 -- | Write memory of local node
 writeMemory ::
