@@ -36,6 +36,7 @@ module SoOSiM.SimMonad
   , respondS
   , readMemoryN
   , writeMemoryN
+  , componentLookupN
   )
 where
 
