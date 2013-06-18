@@ -148,6 +148,10 @@ handleInput t iface metaTV st@(WaitingFor waitingFor f) state
   | otherwise
   = incrWaitingCount metaTV >> return ((st, state), Just msg)
 
+-- Don't process messages while in a running state
+handleInput _ _ _ st@(Running _ _) state msg
+  = return ((st,state), Just msg)
+
 handleInput t iface metaTV st state
   msg@(Message mTime _ _)
   | mTime < t
