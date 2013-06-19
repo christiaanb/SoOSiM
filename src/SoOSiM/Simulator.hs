@@ -6,7 +6,8 @@
 module SoOSiM.Simulator where
 
 import           Control.Applicative       ((<$>),(<*>))
-import           Control.Concurrent.STM    (TVar,atomically,newTVarIO,readTVar,writeTVar)
+import           Control.Arrow             (first,second)
+import           Control.Concurrent.STM    (atomically,newTVarIO,readTVar,writeTVar)
 import           Control.Concurrent.Supply (freshId,newSupply)
 import           Control.Monad.Coroutine   (resume)
 import           Control.Monad.State       (execStateT,gets,lift,modify)
@@ -40,38 +41,41 @@ executeNode node = do
 executeComponent ::
   ComponentContext
   -> SimMonad ()
-executeComponent (CC token cId _ statusTV stateTV bufferTV _ metaTV) = do
+executeComponent (CC token cId _ statusTV stateTV reqTV respTV _ metaTV) = do
   modify $ (\s -> s {currentComponent = cId })
-  (status,state,buffer) <- lift $ (,,) <$> readTVar statusTV
-                                       <*> readTVar stateTV
-                                       <*> readTVar bufferTV
+  (status,state,req,resp) <- lift $ (,,,) <$> readTVar statusTV
+                                          <*> readTVar stateTV
+                                          <*> readTVar reqTV
+                                          <*> readTVar respTV
 
-  ((status',state'),buffer') <- case (status,buffer) of
-    (Killed, _) -> return ((status,state),buffer)
-    (Running 0 c, _) -> do
+  ((status',state'),(req',resp')) <- case (status,req,resp) of
+    (Killed, _, _) -> return ((status,state),(req,resp))
+    (Running 0 c, _, _) -> do
       incrRunningCount metaTV
       r <- handleResult token c state
-      return (r,buffer)
-    (Running n c, _) -> do
+      return (r,(req,resp))
+    (Running n c, _, _) -> do
       incrRunningCount metaTV
-      return ((Running (n-1) c,state),buffer)
-    (ReadyToRun, []) -> do
+      return ((Running (n-1) c,state),(req,resp))
+    (ReadyToRun, [], _) -> do
       incrRunningCount metaTV
       r <- handleResult token (componentBehaviour token state Tick) state
-      return (r,[])
-    (ReadyToIdle, []) -> do
+      return (r,([],[]))
+    (ReadyToIdle, [], _) -> do
       incrIdleCount metaTV
-      return ((status,state),buffer)
-    (WaitingFor _ _, []) -> do
+      return ((status,state),([],[]))
+    (WaitingFor _ _,_,[]) -> do
       incrWaitingCount metaTV
-      return ((status,state),buffer)
+      return ((status,state),(req,[]))
     _ -> do
+      incrRunningCount metaTV
       t <- gets simClk
-      runUntilNothingM (handleInput t) token metaTV status state buffer
+      runUntilNothingM (handleInput t) token status state (req,resp)
 
   lift $ writeTVar statusTV status' >>
          writeTVar stateTV  state'  >>
-         writeTVar bufferTV buffer'
+         writeTVar reqTV    req'    >>
+         writeTVar respTV   resp'
 
 resumeYield ::
   ComponentInterface iface
@@ -107,69 +111,82 @@ handleResult iface f state = do
       return (Killed, state)
 
 runUntilNothingM ::
-  Monad m
-  => (a -> b -> c -> d -> e -> m ((c,d),Maybe e))
-  -> a -> b -> c -> d -> [e]
-  -> m ((c,d),[e])
-runUntilNothingM _ _     _   st s []         = return ((st, s), [])
-runUntilNothingM f iface mTV st s (inp:inps) = do
-  (r, inpM) <- f iface mTV st s inp
-  case inpM of
-    Nothing -> do
-      (r',inps') <- runUntilNothingM f iface mTV (fst r) (snd r) inps
-      return (r',inps')
-    Just _ -> do
-      (r',inps') <- runUntilNothingM f iface mTV st s inps
-      return (r',inp:inps')
+  ( iface
+    -> ComponentStatus iface
+    -> State iface
+    -> Either (Input Dynamic) (Input Dynamic)
+    -> SimMonad ( (ComponentStatus iface,State iface)
+                , Maybe (Either (Input Dynamic) (Input Dynamic))
+                )
+  )
+  -> iface -> ComponentStatus iface -> State iface
+  -> ([Input Dynamic],[Input Dynamic])
+  -> SimMonad ( (ComponentStatus iface,State iface)
+              , ([Input Dynamic],[Input Dynamic])
+              )
+runUntilNothingM f iface st s (req,resp) = case (req,resp) of
+    (_,inp:inps)  -> do (r,msgM) <- f iface st s (Right inp)
+                        handleRep r msgM req inps
+
+    (inp:inps,[]) -> do (r,msgM) <- f iface st s (Left inp)
+                        handleRep r msgM inps []
+    ([],[])       -> return ((st,s),([],[]))
+
+  where
+    handleRep r msgM req' resp' = case msgM of
+      Nothing -> runUntilNothingM f iface (fst r) (snd r) (req',resp')
+      Just (Left msg) -> fmap ((second . first) (msg:))
+                       $ runUntilNothingM f iface st s (req',resp')
+      Just (Right msg) -> fmap ((second . second) (msg:))
+                        $ runUntilNothingM f iface st s (req',resp')
 
 -- | Update component context according to simulator event
 handleInput ::
   (ComponentInterface iface, Typeable (Receive iface))
   => Int
   -> iface
-  -> TVar SimMetaData
   -> ComponentStatus iface
   -- ^ Current component context
   -> State iface
-  -> Input Dynamic
+  -> Either (Input Dynamic) (Input Dynamic)
   -- ^ Simulator Event
-  -> SimMonad ((ComponentStatus iface, State iface), Maybe (Input Dynamic))
+  -> SimMonad ((ComponentStatus iface, State iface), Maybe (Either (Input Dynamic) (Input Dynamic)))
   -- ^ Returns tuple of: ((potentially updated) component context,
   -- (potentially update) component state, 'Nothing' when event is consumed;
   -- 'Just' 'ComponentInput' otherwise)
-handleInput t iface metaTV st@(WaitingFor waitingFor f) state
-  msg@(Message mTime content sender)
+handleInput t iface st@(WaitingFor waitingFor f) state
+  msg@(Right (Message (mTime,s) content sender))
   | waitingFor == (fst $ unRA sender)
   , mTime < t
   = do
-    incrRunningCount metaTV
-    r <- handleResult iface (f content) state
+    r <- handleResult iface (f (content,s)) state
     return (r,Nothing)
   | otherwise
-  = incrWaitingCount metaTV >> return ((st, state), Just msg)
+  = return ((st, state), Just msg)
 
 -- Don't process messages while in a running state
-handleInput _ _ _ st@(Running _ _) state msg
+handleInput _ _  st@(Running _ _) state msg
   = return ((st,state), Just msg)
 
-handleInput t iface metaTV st state
-  msg@(Message mTime _ _)
+handleInput _ _ st state (Right _)
+  = return ((st,state), Nothing)
+
+handleInput t iface st state
+  msg@(Left msgL@(Message (mTime,_) _ _))
   | mTime < t
   = do
-    incrRunningCount metaTV
     r <- handleResult iface
-          (componentBehaviour iface state (fromDynMsg iface msg))
+          (componentBehaviour iface state (fromDynMsg iface msgL))
           state
     return (r,Nothing)
   | otherwise
   = return ((st,state),Just msg)
 
-handleInput _ iface metaTV _ state
-  msg@(Tick)
+handleInput _ iface _ state
+  (Left Tick)
   = do
-    incrRunningCount metaTV
     r <- handleResult iface
-          (componentBehaviour iface state (fromDynMsg iface msg))
+          (componentBehaviour iface state (fromDynMsg iface Tick))
           state
     return (r,Nothing)
 
@@ -180,10 +197,11 @@ initSim node0id s = do
       emptyMeta = SimMetaData 0 0 0 Map.empty Map.empty
   statusTV <- newTVarIO ReadyToRun
   stateTV  <- newTVarIO s
-  bufferTV <- newTVarIO [Tick]
+  reqBufTV <- newTVarIO [Tick]
+  respBufTV <- newTVarIO []
   emptyMetaTV <- newTVarIO emptyMeta
   let component0CC = CC Initializer component0id component0id statusTV
-                        stateTV bufferTV [] emptyMetaTV
+                        stateTV reqBufTV respBufTV [] emptyMetaTV
       node0 = Node node0id NodeInfo Map.empty
                    (IM.fromList [(component0id,component0CC)])
                    IM.empty [component0id]

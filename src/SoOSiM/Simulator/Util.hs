@@ -44,20 +44,22 @@ componentNode cId = do
 updateMsgBuffer ::
   ComponentId
   -- ^ Recipient component ID
+  -> (ComponentContext -> TVar [Input Dynamic])
+  -- ^ Buffer lens
   -> Input Dynamic
   -- ^ Actual message
   -> Node
   -- ^ Node containing the component
   -> SimMonad ()
-updateMsgBuffer recipient msg@(Message _ _ sender) node = do
+updateMsgBuffer recipient lens msg@(Message _ _ sender) node = do
     let ce = (nodeComponents node) IM.! recipient
-    lift $ modifyTVar (msgBuffer ce) (\msgs -> msgs ++ [msg])
+    lift $ modifyTVar (lens ce) (\msgs -> msgs ++ [msg])
     lift $ modifyTVar (simMetaData ce)
             (\mData -> mData {msgsReceived = Map.insertWith (+)
                                               (snd $ unRA sender) 1
                                               (msgsReceived mData)})
 
-updateMsgBuffer _ _ _ = return ()
+updateMsgBuffer _ _ _ _ = return ()
 
 incrSendCounter ::
   ComponentId
@@ -84,9 +86,10 @@ updateTraceBuffer cmpId timeStamp msg tag node =
     node { nodeComponents = f (nodeComponents node)}
   where
     f ccs = IM.adjust g cmpId ccs
-    g cc@(CC iface _ _ _ _ _ _ _) = cc {traceMsgs = (traceMsgs) cc ++ [(msg',fmap (stamp ++) tag)]}
+    g cc@(CC iface cId _ _ _ _ _ _ _) = cc {traceMsgs = (traceMsgs) cc ++ [(msg',fmap (stamp ++) tag)]}
       where msg' = concat [ stamp ++ " "
-                          , componentName iface ++ ": "
+                          , componentName iface ++ "("
+                          , show cId ++ "): "
                           , msg
                           ]
             stamp = "[" ++ show timeStamp ++ "]"
@@ -104,13 +107,14 @@ incrRunningCount tv = lift $ modifyTVar tv (\mdata -> mdata
 sendMessage ::
   ComponentId
   -> ComponentId
+  -> (ComponentContext -> TVar [Input Dynamic])
   -> Input Dynamic
   -> SimMonad ()
-sendMessage sender recipient message = do
+sendMessage sender recipient lens message = do
   rNodeIdM <- componentNode recipient
   sNodeIdM <- componentNode sender
   maybe' sNodeIdM (return ())    $ \sNodeId -> modifyNodeM sNodeId (incrSendCounter recipient sender)
-  maybe' rNodeIdM (error errMsg) $ \rNodeId -> modifyNodeM rNodeId (updateMsgBuffer recipient message)
+  maybe' rNodeIdM (error errMsg) $ \rNodeId -> modifyNodeM rNodeId (updateMsgBuffer recipient lens message)
   where
     errMsg = concat [ "Component: "
                     , show sender
@@ -124,8 +128,8 @@ fromDynMsg ::
   => i
   -> Input Dynamic
   -> Input (Receive i)
-fromDynMsg _ (Message mTime content retChan) =
-  Message mTime (unmarshall "fromDynMsg" content) retChan
+fromDynMsg _ (Message (mTime,s) content retChan) =
+  Message (mTime,s) (unmarshall ("fromDynMsg: " ++ s) content) retChan
 fromDynMsg _ Tick = Tick
 
 returnAddress ::

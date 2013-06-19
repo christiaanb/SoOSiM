@@ -113,11 +113,12 @@ createComponentNPS nodeIdM parentIdM iStateM iface = Sim $ do
 
     let iState = fromMaybe (initState iface) iStateM
     stateTV   <- (lift . lift) $ newTVar iState
-    msgBufTV  <- (lift . lift) $ newTVar []
+    reqBufTV  <- (lift . lift) $ newTVar []
+    respBufTV <- (lift . lift) $ newTVar []
     let meta  = SimMetaData 0 0 0 Map.empty Map.empty
     metaTV    <- (lift . lift) $ newTVar meta
 
-    let component = (CC iface compId parentId statusTV stateTV msgBufTV [] metaTV)
+    let component = (CC iface compId parentId statusTV stateTV reqBufTV respBufTV [] metaTV)
 
     lift $ modifyNode nodeId (addComponent compId component)
 
@@ -133,7 +134,7 @@ createComponentNPS nodeIdM parentIdM iStateM iface = Sim $ do
 {-# INLINE invoke #-}
 -- | Synchronously invoke another component
 invoke ::
-  (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface))
+  (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface), Show (Receive iface))
   => iface
   -- ^ Interface type
   -> ComponentId
@@ -149,7 +150,8 @@ invokeS ::
   forall iface
   . (ComponentInterface iface
     , Typeable (Receive iface)
-    , Typeable (Send iface))
+    , Typeable (Send iface)
+    , Show (Receive iface))
   => iface
   -- ^ Interface type
   -> Maybe ComponentId
@@ -163,15 +165,15 @@ invokeS ::
 invokeS _ senderM recipient content = Sim $ do
   t            <- gets simClk
   sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
-  let message  = Message t (toDyn content) (RA (sender,sender))
-  lift $ sendMessage sender recipient message
-  var <- suspend (Request recipient return)
-  return (unmarshall "invoke" var)
+  let message  = Message (t,show content) (toDyn content) (RA (sender,sender))
+  lift $ sendMessage sender recipient requestBuffer message
+  (varD,varS) <- suspend (Request recipient return)
+  return (unmarshall ("invoke: " ++ show (sender,recipient,content) ++ varS) varD)
 
 {-# INLINE invokeAsync #-}
 -- | Invoke another component, handle response asynchronously
 invokeAsync ::
-  (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface))
+  (ComponentInterface iface, Typeable (Receive iface), Typeable (Send iface), Show (Receive iface))
   => iface
   -- ^ Interface type
   -> ComponentId
@@ -190,7 +192,8 @@ invokeAsyncS ::
   forall iface
   . (ComponentInterface iface
     , Typeable (Receive iface)
-    , Typeable (Send iface))
+    , Typeable (Send iface)
+    , Show (Receive iface))
   => iface
   -- ^ Interface type
   -> Maybe ComponentId
@@ -207,12 +210,12 @@ invokeAsyncS _ parentIdM recipient content handler = Sim $ do
   nodeId       <- gets currentNode
   parentId     <- fmap (`fromMaybe` parentIdM) $ gets currentComponent
   sender       <- runSim $ createComponentNPS (Just nodeId) parentIdM
-                    (Just (recipient,handler . unmarshallAsync))
+                    (Just (recipient,\(d,_) -> handler $ unmarshallAsync d))
                     (HS parentId)
   t            <- gets simClk
 
-  let message  = Message t (toDyn content) (RA (sender,parentId))
-  lift $ sendMessage parentId recipient message
+  let message  = Message (t,show content) (toDyn content) (RA (sender,parentId))
+  lift $ sendMessage parentId recipient requestBuffer message
 
   where
     unmarshallAsync :: Dynamic -> Send iface
@@ -221,7 +224,7 @@ invokeAsyncS _ parentIdM recipient content handler = Sim $ do
 {-# INLINE notify #-}
 -- | Notify another component
 notify ::
-  (ComponentInterface iface, Typeable (Receive iface))
+  (ComponentInterface iface, Typeable (Receive iface), Show (Receive iface))
   => iface
   -- ^ Interface type
   -> ComponentId
@@ -235,7 +238,8 @@ notify iface recipient content = notifyS iface Nothing recipient content
 notifyS ::
   forall iface
   . (ComponentInterface iface
-    , Typeable (Receive iface))
+    , Typeable (Receive iface)
+    , Show (Receive iface))
   => iface
   -- ^ Interface type
   -> Maybe ComponentId
@@ -248,13 +252,13 @@ notifyS ::
 notifyS _ senderM recipient content = Sim $ do
   sender       <- fmap (`fromMaybe` senderM) $ gets currentComponent
   t            <- gets simClk
-  let message  = Message t (toDyn content) (RA (sender,sender))
-  lift $ sendMessage sender recipient message
+  let message  = Message (t, show content) (toDyn content) (RA (sender,sender))
+  lift $ sendMessage sender recipient requestBuffer message
 
 {-# INLINE respond #-}
 -- | Respond to an invocation
 respond ::
-  (ComponentInterface iface, Typeable (Send iface))
+  (ComponentInterface iface, Typeable (Send iface), Show (Send iface))
   => iface
   -- ^ Interface type
   -> ReturnAddress
@@ -269,7 +273,8 @@ respond iface retAddr content = respondS iface Nothing retAddr content
 respondS ::
   forall iface
   . ( ComponentInterface iface
-    , Typeable (Send iface))
+    , Typeable (Send iface)
+    , Show (Send iface))
   => iface
   -- ^ Interface type
   -> Maybe ComponentId
@@ -283,8 +288,8 @@ respondS ::
 respondS _ senderM recipient content = Sim $ do
   sender <- fmap (`fromMaybe` senderM) $ gets currentComponent
   t      <- gets simClk
-  let message = Message t (toDyn content) (RA (sender,sender))
-  lift $ sendMessage sender (fst $ unRA recipient) message
+  let message = Message (t, show content) (toDyn content) (RA (sender,sender))
+  lift $ sendMessage sender (fst $ unRA recipient) responseBuffer message
 
 -- | Have a pure computation run for 'n' simulator ticks
 compute ::
@@ -456,16 +461,16 @@ stopSim = Sim $ modify (\s -> s {running = False})
 newtype HandlerStub = HS ComponentId
 
 instance ComponentInterface HandlerStub where
-  type State   HandlerStub = (ComponentId, Dynamic -> Sim ())
+  type State   HandlerStub = (ComponentId, (Dynamic,String) -> Sim ())
   type Receive HandlerStub = Dynamic
   type Send    HandlerStub = ()
   initState _              = undefined
   componentName (HS cId)   = "Asynchronous callback for component " ++
                                show cId
-  componentBehaviour _ (waitingFor, handler) (Message _ cnt sender)
+  componentBehaviour _ (waitingFor, handler) (Message (_,s) cnt sender)
     | returnAddress sender == waitingFor
     = Sim $ do
-      runSim $ handler cnt
+      runSim $ handler (cnt,s)
       suspend Kill
 
   componentBehaviour _ (waitingFor, handler) _  = Sim $ do

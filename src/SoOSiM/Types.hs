@@ -75,8 +75,10 @@ data ComponentContext = forall s . (ComponentInterface s, Typeable (Receive s)) 
      -- ^ Status of the component
      , componentState     :: TVar (State s)
      -- ^ State internal to the component
-     , msgBuffer          :: TVar [Input Dynamic]
+     , requestBuffer      :: TVar [Input Dynamic]
      -- ^ Message waiting to be processed by the component
+     , responseBuffer     :: TVar [Input Dynamic]
+     -- ^ Responses waiting to be processed by the component
      , traceMsgs          :: [(String, Maybe String)]
      -- ^ Trace message buffer
      , simMetaData        :: TVar SimMetaData
@@ -101,7 +103,7 @@ data SimMetaData
 data ComponentStatus a
   = ReadyToIdle
   -- ^ Component is doing nothing
-  | WaitingFor ComponentId (Dynamic -> Sim (State a))
+  | WaitingFor ComponentId ((Dynamic,String) -> Sim (State a))
   -- ^ Component is waiting for a message from 'ComponentId', will continue
   -- with computation ('(' -> 'SimM' a) once received
   | Running Int (Sim (State a))
@@ -114,13 +116,14 @@ type MsgTime = Int
 
 -- | Events send to components by the simulator
 data Input a
-  = Message MsgTime a ReturnAddress
+  = Message (MsgTime,String) a ReturnAddress
   -- ^ A message send another component: the field argument is the
   -- 'ComponentId' of the sender, the second field the message content
   | Tick
   -- ^ Event send every simulation round
 
 newtype ReturnAddress = RA { unRA :: (ComponentId,ComponentId) }
+  deriving Show
 
 instance Show (Input a) where
   show (Message mTime _ sender) = "Mesage(" ++ show mTime ++ ") from: " ++ (show . fst $ unRA sender)
@@ -169,7 +172,7 @@ data Node
 newtype Sim a = Sim { runSim :: SimInternal a }
   deriving (Functor, Monad, State.MonadState SimState, MonadUnique)
 
-type SimInternal = Coroutine (RequestOrYield Unique Dynamic) SimMonad
+type SimInternal = Coroutine (RequestOrYield Unique (Dynamic,String)) SimMonad
 
 instance State.MonadState SimState SimInternal where
   get   = lift get
