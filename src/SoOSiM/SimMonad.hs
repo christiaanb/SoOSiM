@@ -18,6 +18,7 @@ module SoOSiM.SimMonad
   , createNode
   , compute
   , stop
+  , expect
   -- * Advanced API
   , createNodeN
   , runSTM
@@ -169,6 +170,18 @@ invokeS _ senderM recipient content = Sim $ do
   lift $ sendMessage sender recipient requestBuffer message
   (varD,varS) <- suspend (Request recipient return)
   return (unmarshall ("invoke: " ++ show (sender,recipient,content) ++ varS) varD)
+
+expect ::
+  forall iface
+  . ( ComponentInterface iface
+    , Typeable (Send iface))
+  => iface
+  -> ComponentId
+  -> Sim (Send iface)
+expect _ expectedSender = Sim $ do
+  (varD,varS) <- suspend (Request expectedSender return)
+  return (unmarshall ("expect: " ++ show expectedSender ++ " " ++ varS) varD)
+
 
 {-# INLINE invokeAsync #-}
 -- | Invoke another component, handle response asynchronously
