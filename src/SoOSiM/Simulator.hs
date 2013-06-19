@@ -168,6 +168,11 @@ handleInput t iface st@(WaitingFor waitingFor f) state
 handleInput _ _  st@(Running _ _) state msg
   = return ((st,state), Just msg)
 
+-- Don't process requests while waiting for a response
+handleInput _ _  st@(WaitingFor _ _) state msg@(Left _)
+  = return ((st,state), Just msg)
+
+-- Throw away responses when not expecting one
 handleInput _ _ st state (Right _)
   = return ((st,state), Nothing)
 
